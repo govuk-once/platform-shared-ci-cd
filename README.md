@@ -1,4 +1,4 @@
-# Reusable GitHub Actions workflows
+# Reusable GitHub Actions CI/CD
 
 This repository contains centrally maintained GitHub Actions workflows for GOV.UK App services.
 
@@ -6,10 +6,10 @@ Application repositories remain responsible for their own quality checks, builds
 
 ## Available workflows
 
-| Workflow                                      | Purpose                                                                                                                 |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/semantic-release.yml`      | Determines whether a release is required, creates the Git tag and GitHub release, and returns explicit release outputs. |
-| `.github/workflows/release-notification.yml`  | Sends a Slack notification for major and minor production releases. Patch releases are silently skipped.                |
+| Workflow                                     | Purpose                                                                                                                 |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/semantic-release.yml`     | Determines whether a release is required, creates the Git tag and GitHub release, and returns explicit release outputs. |
+| `.github/workflows/release-notification.yml` | Sends a Slack notification for major and minor production releases. Patch releases are silently skipped.                |
 
 ## Semantic release
 
@@ -19,13 +19,16 @@ Application repositories remain responsible for their own quality checks, builds
 jobs:
   release:
     name: Create Release
-    uses: govuk-once/github-actions-workflows/.github/workflows/semantic-release.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/semantic-release.yml@v1
     permissions:
       contents: write
       issues: write
       pull-requests: write
+      id-token: write
     with:
       node-version: "24"
+    secrets:
+      deployment-role: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
 ```
 
 ### Inputs
@@ -33,6 +36,12 @@ jobs:
 | Input          | Required | Default | Description                                                            |
 | -------------- | -------- | ------- | ---------------------------------------------------------------------- |
 | `node-version` | No       | `24`    | Node.js version used to install dependencies and run semantic-release. |
+
+### Secrets
+
+| Secret            | Required | Description                                    |
+| ----------------- | -------- | ---------------------------------------------- |
+| `deployment-role` | Yes      | ARN of the IAM role to assume for deployment.  |
 
 ### Outputs
 
@@ -86,17 +95,18 @@ Chain it after the semantic release job:
 jobs:
   release:
     name: Create Release
-    uses: govuk-once/github-actions-workflows/.github/workflows/semantic-release.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/semantic-release.yml@v1
     permissions:
       contents: write
       issues: write
       pull-requests: write
-
+  deploy:
+    name: Deploy to production
   notify:
     name: Notify
     needs: release
     if: needs.release.outputs.released == 'true'
-    uses: govuk-once/github-actions-workflows/.github/workflows/release-notification.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/release-notification.yml@v1
     permissions:
       contents: read
       id-token: write
@@ -111,18 +121,18 @@ jobs:
 
 ### Inputs
 
-| Input           | Required | Default     | Description                          |
-| --------------- | -------- | ----------- | ------------------------------------ |
-| `application`   | Yes      | —           | Human-readable name of the service.  |
-| `version`       | Yes      | —           | Semantic version without `v` prefix. |
-| `type`          | Yes      | —           | `major`, `minor` or `patch`.         |
+| Input           | Required | Default     | Description                                            |
+| --------------- | -------- | ----------- | ------------------------------------------------------ |
+| `application`   | Yes      | —           | Human-readable name of the service.                    |
+| `version`       | Yes      | —           | Semantic version without `v` prefix.                   |
+| `type`          | Yes      | —           | `major`, `minor` or `patch`.                           |
 | `slack-channel` | Yes      | —           | Slack channel to post to (e.g. `#my-release-channel`). |
-| `aws-region`    | No       | `eu-west-2` | AWS region for credential exchange.  |
+| `aws-region`    | No       | `eu-west-2` | AWS region for credential exchange.                    |
 
 ### Secrets
 
-| Secret            | Required | Description                                      |
-| ----------------- | -------- | ------------------------------------------------ |
+| Secret            | Required | Description                                             |
+| ----------------- | -------- | ------------------------------------------------------- |
 | `deployment-role` | Yes      | IAM role ARN assumed via OIDC to send the notification. |
 
 ## Repository access
@@ -136,7 +146,7 @@ Calling repositories must also permit actions and reusable workflows from this r
 Consumers should reference an approved major version:
 
 ```yaml
-uses: govuk-once/github-actions-workflows/.github/workflows/semantic-release.yml@v1
+uses: govuk-once/platform-shared-ci-cd/.github/workflows/semantic-release.yml@v1
 ```
 
 Workflow releases should use immutable semantic-version tags such as `v1.0.0`. A maintained `v1` tag may point to the latest backwards-compatible `v1` release.

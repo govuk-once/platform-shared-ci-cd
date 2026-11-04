@@ -9,6 +9,11 @@ on:
         type: string
         default: "24"
 
+    secrets:
+      deployment-role:
+        required: true
+        description: "ARN of the IAM role to assume for deployment"
+
     outputs:
       released:
         description: "Whether a new semantic release was created"
@@ -19,6 +24,10 @@ on:
       type:
         description: "The release type: major, minor or patch"
         value: ${{ jobs.release.outputs.type }}
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   release:
@@ -50,6 +59,11 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: "pnpm"
+
+      - name: Configure CodeArtifact auth
+        uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@ce0d38a2fb22c5f6bd8b8764a1572fbc080a52d1
+        with:
+          role-to-assume: ${{ secrets.deployment-role }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
