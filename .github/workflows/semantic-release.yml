@@ -61,4 +61,4 @@ jobs:
 
       - name: Run semantic-release
         id: semantic-release
-        uses: govuk-once/platform-shared-ci-cd/actions/semantic-release@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/semantic-release@test/consolidate-pipeline

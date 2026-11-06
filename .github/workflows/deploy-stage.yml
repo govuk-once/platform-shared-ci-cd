@@ -100,21 +100,21 @@ jobs:
           role-session-name: ${{ inputs.mode }}-${{ github.run_id }}
 
       - name: Setup Node.js and pnpm
-        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@test/consolidate-pipeline
         with:
           node-version: ${{ fromJSON(inputs.config).node.version }}
           codeartifact-account: ${{ fromJSON(inputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
 
       - name: Pre-deploy hooks
         if: inputs.mode == 'deploy'
-        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@test/consolidate-pipeline
         with:
           label: pre-deploy
           hooks: ${{ toJSON(fromJSON(inputs.stage).pre-deploy) }}
 
       - name: ${{ inputs.mode == 'destroy' && 'Destroy' || 'Deploy' }}
         id: deploy
-        uses: govuk-once/platform-shared-ci-cd/actions/cdk-deploy@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/cdk-deploy@test/consolidate-pipeline
         with:
           command: ${{ inputs.mode == 'destroy' && fromJSON(inputs.stage).destroy || fromJSON(inputs.stage).deploy }}
           working-directory: ${{ fromJSON(inputs.stage).working-directory }}
@@ -135,7 +135,7 @@ jobs:
 
       - name: Post-deploy hooks
         if: inputs.mode == 'deploy'
-        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@test/consolidate-pipeline
         with:
           label: post-deploy
           hooks: ${{ toJSON(fromJSON(inputs.stage).post-deploy) }}
@@ -146,7 +146,7 @@ jobs:
           inputs.mode == 'deploy' &&
           !(fromJSON(inputs.stage).release-notification == null) &&
           (inputs.release-type == 'major' || inputs.release-type == 'minor')
-        uses: govuk-once/platform-shared-ci-cd/actions/release-notification@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/release-notification@test/consolidate-pipeline
         with:
           application: ${{ fromJSON(inputs.config).application }}
           version: ${{ inputs.version }}
@@ -169,7 +169,7 @@ jobs:
 
       - name: Notify deployment
         if: inputs.mode == 'deploy' && contains(fromJSON(inputs.config).notifications.notify-on, 'success')
-        uses: govuk-once/platform-shared-ci-cd/actions/notify-deployment@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/notify-deployment@test/consolidate-pipeline
         with:
           application: ${{ fromJSON(inputs.config).application }}
           environment: ${{ fromJSON(inputs.stage).name }}

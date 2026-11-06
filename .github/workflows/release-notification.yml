@@ -48,7 +48,7 @@ jobs:
           role-session-name: release-notification-${{ github.run_id }}
 
       - name: Send release notification
-        uses: govuk-once/platform-shared-ci-cd/actions/release-notification@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/release-notification@test/consolidate-pipeline
         with:
           application: ${{ inputs.application }}
           version: ${{ inputs.version }}

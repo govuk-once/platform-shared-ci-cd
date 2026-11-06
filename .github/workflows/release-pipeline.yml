@@ -51,14 +51,14 @@ jobs:
 
       - name: Load pipeline config
         id: load
-        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@test/consolidate-pipeline
         with:
           path: ${{ inputs.config-path }}
 
   quality:
     name: Quality
     needs: config
-    uses: govuk-once/platform-shared-ci-cd/.github/workflows/quality-checks.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/quality-checks.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
     secrets: inherit
@@ -115,7 +115,7 @@ jobs:
 
       - name: Setup Node.js and pnpm
         if: env.ENABLED == 'true'
-        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@test/consolidate-pipeline
         with:
           node-version: ${{ fromJSON(needs.config.outputs.config).node.version }}
           codeartifact-account: ${{ fromJSON(needs.config.outputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
@@ -123,7 +123,7 @@ jobs:
       - name: Run semantic-release
         id: release
         if: env.ENABLED == 'true'
-        uses: govuk-once/platform-shared-ci-cd/actions/semantic-release@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/semantic-release@test/consolidate-pipeline
         with:
           github-token: ${{ steps.app-token.outputs.token || github.token }}
 
@@ -139,7 +139,7 @@ jobs:
     concurrency:
       group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[0].name }}
       cancel-in-progress: false
-    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
       stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[0]) }}
@@ -157,7 +157,7 @@ jobs:
     concurrency:
       group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[1].name }}
       cancel-in-progress: false
-    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
       stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[1]) }}
@@ -175,7 +175,7 @@ jobs:
     concurrency:
       group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[2].name }}
       cancel-in-progress: false
-    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
       stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[2]) }}
@@ -193,7 +193,7 @@ jobs:
     concurrency:
       group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[3].name }}
       cancel-in-progress: false
-    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
       stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[3]) }}
@@ -248,7 +248,7 @@ jobs:
 
       - name: Notify failure
         if: env.HAS_NOTIFICATIONS_ROLE == 'true'
-        uses: govuk-once/platform-shared-ci-cd/actions/notify-deployment@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/notify-deployment@test/consolidate-pipeline
         with:
           application: ${{ fromJSON(needs.config.outputs.config).application }}
           environment: ${{ steps.failed.outputs.environment }}

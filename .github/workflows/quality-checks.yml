@@ -46,7 +46,7 @@ jobs:
           role-session-name: quality-${{ github.run_id }}
 
       - name: Setup Node.js and pnpm
-        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@test/consolidate-pipeline
         with:
           node-version: ${{ fromJSON(inputs.config).node.version }}
           codeartifact-account: ${{ fromJSON(inputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
@@ -62,7 +62,7 @@ jobs:
         run: bash -euo pipefail -c "${SETUP}"
 
       - name: Run checks
-        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@test/consolidate-pipeline
         with:
           label: check
           hooks: ${{ toJSON(fromJSON(inputs.config).quality.checks) }}
@@ -140,13 +140,13 @@ jobs:
           role-session-name: sonar-${{ github.run_id }}
 
       - name: Setup Node.js and pnpm
-        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@test/consolidate-pipeline
         with:
           node-version: ${{ fromJSON(inputs.config).node.version }}
           codeartifact-account: ${{ fromJSON(inputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
 
       - name: SonarQube scan
-        uses: govuk-once/platform-shared-ci-cd/actions/sonar-scan@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/sonar-scan@test/consolidate-pipeline
         with:
           sonar-token: ${{ secrets.SONAR_TOKEN }}
           sonar-host-url: ${{ secrets.SONAR_URL }}

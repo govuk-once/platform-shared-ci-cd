@@ -37,7 +37,7 @@ jobs:
 
       - name: Load pipeline config
         id: load
-        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@v1
+        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@test/consolidate-pipeline
         with:
           path: ${{ inputs.config-path }}
 
@@ -49,7 +49,7 @@ jobs:
     concurrency:
       group: pipeline-ephemeral-${{ github.repository }}-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: false
-    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
       stage: ${{ toJSON(fromJSON(needs.config.outputs.config).pr.ephemeral) }}
