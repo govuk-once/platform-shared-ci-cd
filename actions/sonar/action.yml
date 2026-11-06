@@ -1,0 +1,62 @@
+name: SonarQube scan
+description: >-
+  Optionally runs the test command to produce coverage, then runs a SonarQube
+  scan and waits for the quality gate. Expects the repository to be checked out
+  with `fetch-depth: 0` and dependencies installed.
+
+inputs:
+  sonar-token:
+    description: SonarQube token.
+    required: true
+  sonar-host-url:
+    description: SonarQube server URL.
+    required: true
+  test-command:
+    description: Command run before the scan to generate coverage. Leave empty to skip.
+    required: false
+    default: ""
+  wait-for-quality-gate:
+    description: Fail the step if the quality gate fails ("true"/"false").
+    required: false
+    default: "true"
+  quality-gate-timeout:
+    description: Seconds to wait for the quality gate result.
+    required: false
+    default: "120"
+  args:
+    description: Additional arguments passed to the scanner, e.g. `-Dsonar.projectKey=my-project`.
+    required: false
+    default: ""
+  project-base-dir:
+    description: Directory to scan.
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Run tests
+      if: inputs.test-command != ''
+      shell: bash
+      env:
+        TEST_COMMAND: ${{ inputs.test-command }}
+      run: bash -euo pipefail -c "${TEST_COMMAND}"
+
+    - name: Cache SonarQube scanner
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+
+    - name: Run SonarQube scan
+      uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+      with:
+        projectBaseDir: ${{ inputs.project-base-dir }}
+        args: >
+          -Dsonar.qualitygate.wait=${{ inputs.wait-for-quality-gate }}
+          -Dsonar.qualitygate.timeout=${{ inputs.quality-gate-timeout }}
+          ${{ inputs.args }}
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host-url }}

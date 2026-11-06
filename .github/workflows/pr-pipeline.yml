@@ -1,0 +1,96 @@
+name: PR Pipeline
+
+# Pull request pipeline driven by the caller's .github/pipeline.yml:
+#   config -> title check
+#          -> quality checks
+#          -> ephemeral environment deploy + post-deploy hooks (after the title check)
+#
+# Call from a workflow triggered by pull_request (opened, edited, synchronize,
+# reopened) with `secrets: inherit`. Editing only the PR description or title
+# re-runs the title check without redeploying.
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to the pipeline config in the calling repository.
+        required: false
+        type: string
+        default: ".github/pipeline.yml"
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  config:
+    name: Load pipeline config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      config: ${{ steps.load.outputs.config }}
+      has-ephemeral: ${{ steps.load.outputs.has-ephemeral }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: ${{ inputs.config-path }}
+          sparse-checkout-cone-mode: false
+
+      - name: Load pipeline config
+        id: load
+        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@v1
+        with:
+          path: ${{ inputs.config-path }}
+
+  title:
+    name: Validate PR title
+    needs: config
+    if: fromJSON(needs.config.outputs.config).pr.title != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Validate PR title
+        uses: govuk-once/platform-shared-ci-cd/actions/validate-pr-title@v1
+        with:
+          pattern: ${{ fromJSON(needs.config.outputs.config).pr.title.pattern }}
+          format: ${{ fromJSON(needs.config.outputs.config).pr.title.format }}
+          examples: ${{ fromJSON(needs.config.outputs.config).pr.title.examples }}
+          guidance-url: ${{ fromJSON(needs.config.outputs.config).pr.title.guidance-url }}
+          skip-actors: ${{ fromJSON(needs.config.outputs.config).pr.title.skip-actors }}
+          post-comment: ${{ fromJSON(needs.config.outputs.config).pr.title.comment }}
+
+  quality:
+    name: Quality
+    needs: config
+    if: github.event.action != 'edited'
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/quality-checks.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+    secrets: inherit
+
+  ephemeral:
+    name: Ephemeral environment
+    needs: [config, title]
+    if: >-
+      !cancelled() &&
+      needs.config.result == 'success' &&
+      needs.title.result != 'failure' &&
+      needs.config.outputs.has-ephemeral == 'true' &&
+      github.event.action != 'edited'
+    # Shared with pr-cleanup.yml so a destroy never overlaps a deploy.
+    concurrency:
+      group: pipeline-ephemeral-${{ github.repository }}-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+      stage: ${{ toJSON(fromJSON(needs.config.outputs.config).pr.ephemeral) }}
+    secrets: inherit
