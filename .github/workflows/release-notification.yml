@@ -23,6 +23,7 @@ on:
     secrets:
       deployment-role:
         required: true
+        description: "ARN of the IAM role to assume for deployment"
 
 permissions:
   contents: read
