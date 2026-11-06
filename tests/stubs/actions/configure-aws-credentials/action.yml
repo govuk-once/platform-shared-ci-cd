@@ -1,0 +1,21 @@
+name: "Stub: aws-actions/configure-aws-credentials"
+description: Local act stand-in for aws-actions/configure-aws-credentials. Logs its inputs and does nothing else.
+inputs:
+  role-to-assume: { required: false }
+  aws-region: { required: false }
+  role-session-name: { required: false }
+outputs:
+  aws-account-id: { value: "000000000000" }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "[stub] configure-aws-credentials role=${{ inputs.role-to-assume }} region=${{ inputs.aws-region }}"
+        {
+          echo "AWS_REGION=${{ inputs.aws-region }}"
+          echo "AWS_DEFAULT_REGION=${{ inputs.aws-region }}"
+          echo "AWS_ACCESS_KEY_ID=ASIASTUBSTUBSTUBSTUB"
+          echo "AWS_SECRET_ACCESS_KEY=stub"
+          echo "AWS_SESSION_TOKEN=stub"
+        } >> "$GITHUB_ENV"

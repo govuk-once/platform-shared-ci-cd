@@ -1,0 +1,22 @@
+name: "Stub: actions/checkout"
+description: >-
+  Local act stand-in for actions/checkout. scripts/act.sh runs act with --bind,
+  so the workspace (including .git) is already mounted in every job; the real
+  action would try to clone from GitHub whenever `ref` or `repository` is set.
+inputs:
+  ref: { required: false }
+  repository: { required: false }
+  fetch-depth: { required: false }
+  persist-credentials: { required: false }
+  sparse-checkout: { required: false }
+  sparse-checkout-cone-mode: { required: false }
+  token: { required: false }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "[stub] checkout ref=${{ inputs.ref }} (workspace bind-mounted by act)"
+        # Keep the stub CLIs first on PATH; act can drop a --env PATH once a
+        # step writes to GITHUB_ENV, but GITHUB_PATH entries survive.
+        echo "${GITHUB_WORKSPACE}/.act/bin" >> "$GITHUB_PATH"

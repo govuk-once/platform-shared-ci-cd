@@ -1,0 +1,2 @@
+# Sourced by the stub CLIs: log the call to stderr so stdout stays clean for callers.
+echo "[stub] $(basename "$0") $*" >&2

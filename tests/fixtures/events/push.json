@@ -1,0 +1,15 @@
+{
+  "ref": "refs/heads/main",
+  "before": "0c307477f42cd9a7797870295238a3c8bd6662ed",
+  "after": "69b9c4ad157fc67c4f0d59e623c1b23da056b0c9",
+  "head_commit": {
+    "id": "69b9c4ad157fc67c4f0d59e623c1b23da056b0c9",
+    "message": "feat: test pipeline locally with act"
+  },
+  "repository": {
+    "name": "platform-shared-ci-cd",
+    "full_name": "govuk-once/platform-shared-ci-cd",
+    "default_branch": "main",
+    "owner": { "login": "govuk-once" }
+  }
+}

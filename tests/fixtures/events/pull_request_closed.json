@@ -1,0 +1,24 @@
+{
+  "action": "closed",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "title": "UDP-123: Test pipeline locally with act",
+    "state": "closed",
+    "merged": true,
+    "head": {
+      "ref": "feat/act-test",
+      "sha": "69b9c4ad157fc67c4f0d59e623c1b23da056b0c9"
+    },
+    "base": {
+      "ref": "main",
+      "sha": "0c307477f42cd9a7797870295238a3c8bd6662ed"
+    }
+  },
+  "repository": {
+    "name": "platform-shared-ci-cd",
+    "full_name": "govuk-once/platform-shared-ci-cd",
+    "default_branch": "main",
+    "owner": { "login": "govuk-once" }
+  }
+}

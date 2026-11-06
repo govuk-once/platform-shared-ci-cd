@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Stub pnpm: repository scripts are the consuming repo's concern, so just log them.
+source "$(dirname "$0")/_log"
+if [ "$1 $2" = "store path" ]; then
+  store="${RUNNER_TEMP:-/tmp}/pnpm-store"
+  mkdir -p "${store}" && touch "${store}/stub-package"
+  echo "${store}"
+fi
+exit 0

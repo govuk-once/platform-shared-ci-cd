@@ -140,10 +140,11 @@ jobs:
           label: post-deploy
           hooks: ${{ toJSON(fromJSON(inputs.stage).post-deploy) }}
 
+      # !(x == null) rather than x != null: act treats a JSON null as != null.
       - name: Send release notification
         if: >-
           inputs.mode == 'deploy' &&
-          fromJSON(inputs.stage).release-notification != null &&
+          !(fromJSON(inputs.stage).release-notification == null) &&
           (inputs.release-type == 'major' || inputs.release-type == 'minor')
         uses: govuk-once/platform-shared-ci-cd/actions/release-notification@v1
         with:
