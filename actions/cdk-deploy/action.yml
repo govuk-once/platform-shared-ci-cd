@@ -1,0 +1,92 @@
+name: CDK deploy
+description: >-
+  Runs a CDK deploy (or destroy) command with AWS credentials already
+  configured. Optionally stamps package.json with a version first and reads a
+  CloudFormation stack's outputs afterwards. Expects the repository to be
+  checked out and dependencies installed.
+
+inputs:
+  command:
+    description: >-
+      Shell command that deploys or destroys the stacks, e.g. `pnpm run cdk:deploy:dev`.
+      Runs with `bash -euo pipefail`; multi-line scripts are allowed.
+    required: true
+  working-directory:
+    description: Directory the command (and version stamping) runs in.
+    required: false
+    default: "."
+  version:
+    description: >-
+      Semantic version to write to package.json in `working-directory` before
+      running the command. Leave empty to keep the committed version.
+    required: false
+    default: ""
+  prerelease-tag:
+    description: When set, the version becomes `<version>-<prerelease-tag>.<short-sha>`.
+    required: false
+    default: ""
+  outputs-stack:
+    description: >-
+      CloudFormation stack to read outputs from after the command succeeds.
+      Leave empty to skip.
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: The version written to package.json. Empty when no version was set.
+    value: ${{ steps.version.outputs.version }}
+  stack-outputs:
+    description: >-
+      JSON object of `outputs-stack` outputs keyed by OutputKey, e.g.
+      `fromJSON(steps.deploy.outputs.stack-outputs).ApiUrl`. `{}` when skipped.
+    value: ${{ steps.outputs.outputs.stack-outputs || '{}' }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set package version
+      id: version
+      if: inputs.version != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        VERSION: ${{ inputs.version }}
+        PRERELEASE_TAG: ${{ inputs.prerelease-tag }}
+        SHA: ${{ github.sha }}
+      run: |
+        if [ -n "${PRERELEASE_TAG}" ]; then
+          FINAL_VERSION="${VERSION}-${PRERELEASE_TAG}.${SHA:0:7}"
+        else
+          FINAL_VERSION="${VERSION}"
+        fi
+        echo "Setting package.json version to ${FINAL_VERSION}"
+        npm version "${FINAL_VERSION}" --no-git-tag-version --allow-same-version
+        echo "version=${FINAL_VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Run CDK command
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        COMMAND: ${{ inputs.command }}
+      run: |
+        # Some CDK apps pin their deployment role to the assumed role.
+        if [ -z "${CDK_DEPLOYMENT_ROLE_ARN:-}" ]; then
+          CDK_DEPLOYMENT_ROLE_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          export CDK_DEPLOYMENT_ROLE_ARN
+        fi
+        bash -euo pipefail -c "${COMMAND}"
+
+    - name: Read stack outputs
+      id: outputs
+      if: inputs.outputs-stack != ''
+      shell: bash
+      env:
+        STACK_NAME: ${{ inputs.outputs-stack }}
+      run: |
+        echo "Reading outputs from stack ${STACK_NAME}"
+        OUTPUTS=$(aws cloudformation describe-stacks --stack-name "${STACK_NAME}" \
+          --query 'Stacks[0].Outputs' --output json \
+          | jq -c 'map({(.OutputKey): .OutputValue}) | add // {}')
+        echo "${OUTPUTS}" | jq .
+        echo "stack-outputs=${OUTPUTS}" >> "$GITHUB_OUTPUT"

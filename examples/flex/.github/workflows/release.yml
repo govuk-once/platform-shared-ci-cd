@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pipeline:
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/release-pipeline.yml@v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+      actions: read
+    secrets: inherit
+
+  # Repo-specific job after the shared pipeline. It runs once production is
+  # deployed (previously ZAP ran against staging in parallel with production).
+  zap:
+    name: ZAP security scan (staging)
+    needs: pipeline
+    uses: ./.github/workflows/zap.yml
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      security-events: write
+    secrets: inherit # pragma: allowlist secret

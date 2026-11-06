@@ -1,0 +1,20 @@
+name: Pull Request
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/pr-pipeline.yml@v1
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      pull-requests: write
+    secrets: inherit

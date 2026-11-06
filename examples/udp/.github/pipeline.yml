@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=../../../schema/pipeline.schema.json
+#
+# Example: user-data-platform on the shared pipelines.
+# Replaces ci.yml, pr-deploy.yml, pr-cleanup.yml, release.yml, version.yml,
+# sonar-scan.yml, __validate-pr.yml, __deploy-env.yml, __deploy-monitoring.yml,
+# __e2e.yml, slack-release-notification.yml and the local actions.
+
+application: UDP
+
+node:
+  codeartifact: true # @govuk-connect packages
+
+pr:
+  title:
+    pattern: '^[A-Z]{3,4}-[1-9][0-9]{0,4}: .+'
+    format: "UDP-123: Description"
+    examples: |
+      UDP-123: Add consent endpoint
+
+  ephemeral:
+    environment: ephemeral # holds the dev account DEPLOYMENT_ROLE
+    env:
+      DEVELOPER_ID: "pr-{pr}"
+    deploy: pnpm run cdk:deploy:dev
+    outputs-stack: "pr-{pr}-dev-e2e"
+    post-deploy:
+      - name: Monitoring
+        run: ./scripts/ci/deploy-monitoring.sh dev cdk:deploy:monitoring
+      - name: E2E tests
+        run: ./scripts/ci/e2e.sh pr
+      - name: Performance tests (smoke)
+        run: ./scripts/ci/perf.sh "${DEVELOPER_ID}-dev" smoke
+    destroy: pnpm cdk:destroy:dev
+
+quality:
+  aws: true # cdk synth for checkov
+  setup: python3 -m pip install semgrep pre-commit checkov
+  checks:
+    - name: Hygiene
+      run: SKIP=format-check,linting-check,checkov-scan,semgrep pre-commit run --all-files --show-diff-on-failure
+    - name: Lint and format
+      run: pnpm lint:all && pnpm format:check
+    - name: Build
+      run: pnpm build:all
+    - name: Unit tests
+      run: pnpm test:all
+    - name: Checkov
+      run: |
+        rm -rf cdk/cdk.out
+        (cd cdk && npx cdk synth --quiet -c skipMonitoringStack=true > /dev/null)
+        checkov -d cdk/cdk.out --config-file cdk/.checkov.yaml
+    - name: Semgrep
+      run: semgrep scan $(cat .semgrep-args.txt) --error .
+  dependency-review: true
+  conventional-commits: true
+  sonar:
+    test: pnpm test:all
+
+environments:
+  - name: dev
+    deploy: pnpm run cdk:deploy:dev
+    prerelease-tag: rc
+    outputs-stack: dev-e2e
+    post-deploy:
+      - name: Monitoring
+        run: ./scripts/ci/deploy-monitoring.sh dev cdk:deploy:monitoring:dev
+      - name: E2E tests
+        run: ./scripts/ci/e2e.sh
+      - name: Performance tests (smoke)
+        run: ./scripts/ci/perf.sh dev smoke
+
+  - name: staging
+    deploy: pnpm run cdk:deploy:stag
+    prerelease-tag: rc
+    outputs-stack: stag-e2e
+    post-deploy:
+      - name: Monitoring
+        run: ./scripts/ci/deploy-monitoring.sh stag cdk:deploy:monitoring:stag
+      - name: E2E tests
+        run: ./scripts/ci/e2e.sh
+      - name: Performance tests (baseline)
+        run: ./scripts/ci/perf.sh stag baseline
+
+  - name: production
+    deploy: pnpm run cdk:deploy:prod
+    post-deploy:
+      - name: Monitoring
+        run: ./scripts/ci/deploy-monitoring.sh prod cdk:deploy:monitoring:prod
+    release-notification:
+      slack-channel: "#udp-releases" # TODO: confirm channel

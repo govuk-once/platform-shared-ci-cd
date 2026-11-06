@@ -1,0 +1,97 @@
+name: Semantic release
+description: >-
+  Runs semantic-release from the calling repository's dependencies and exposes
+  the result as outputs. Expects the repository to be checked out with
+  `fetch-depth: 0` and dependencies installed (including `semantic-release`).
+
+inputs:
+  github-token:
+    description: >-
+      Token semantic-release uses to push the tag and create the GitHub release.
+      Use a GitHub App token when branch protection blocks `github.token`.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  released:
+    description: "`true` when a release was created; otherwise `false`."
+    value: ${{ steps.run.outputs.released }}
+  version:
+    description: New version without the `v` prefix. Empty when no release was created.
+    value: ${{ steps.run.outputs.version }}
+  type:
+    description: "`major`, `minor` or `patch`. Empty when no release was created."
+    value: ${{ steps.run.outputs.type }}
+  deployed-version:
+    description: >-
+      Version to deploy: the new version, else the latest `v*` tag, else the short
+      commit SHA. Never empty.
+    value: ${{ steps.deployed.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    # Run semantic-release programmatically so its result can be exposed
+    # as explicit GitHub Actions outputs.
+    - name: Run semantic-release
+      id: run
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        node --input-type=module <<'NODE'
+        import semanticRelease from "semantic-release";
+        import { appendFileSync } from "node:fs";
+
+        const result = await semanticRelease();
+        const release = result?.nextRelease;
+
+        appendFileSync(
+          process.env.GITHUB_OUTPUT,
+          [
+            `released=${Boolean(release)}`,
+            `version=${release?.version ?? ""}`,
+            `type=${release?.type ?? ""}`,
+            ""
+          ].join("\n")
+        );
+        NODE
+
+    - name: Resolve deployed version
+      id: deployed
+      shell: bash
+      env:
+        RELEASED_VERSION: ${{ steps.run.outputs.version }}
+      run: |
+        VERSION="${RELEASED_VERSION}"
+        if [ -z "${VERSION}" ]; then
+          VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)"
+        fi
+        if [ -z "${VERSION}" ]; then
+          VERSION="$(git rev-parse --short HEAD)"
+        fi
+        echo "Deploying version ${VERSION}"
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Write release summary
+      shell: bash
+      env:
+        RELEASED: ${{ steps.run.outputs.released }}
+        VERSION: ${{ steps.run.outputs.version }}
+        RELEASE_TYPE: ${{ steps.run.outputs.type }}
+        DEPLOYED_VERSION: ${{ steps.deployed.outputs.version }}
+        SERVER_URL: ${{ github.server_url }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        {
+          echo "## Semantic release"
+          echo
+
+          if [ "$RELEASED" = "true" ]; then
+            echo "Created **${RELEASE_TYPE} release v${VERSION}**."
+            echo
+            echo "[View GitHub release](${SERVER_URL}/${REPOSITORY}/releases/tag/v${VERSION})"
+          else
+            echo "No semantic release was required. Deploying **${DEPLOYED_VERSION}**."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

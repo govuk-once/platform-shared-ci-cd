@@ -9,11 +9,6 @@ on:
         type: string
         default: "24"
 
-    secrets:
-      deployment-role:
-        required: true
-        description: "ARN of the IAM role to assume for deployment"
-
     outputs:
       released:
         description: "Whether a new semantic release was created"
@@ -24,10 +19,6 @@ on:
       type:
         description: "The release type: major, minor or patch"
         value: ${{ jobs.release.outputs.type }}
-
-permissions:
-  contents: read
-  id-token: write
 
 jobs:
   release:
@@ -68,48 +59,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Run semantic-release programmatically so its result can be exposed
-      # as explicit GitHub Actions outputs.
       - name: Run semantic-release
         id: semantic-release
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          node --input-type=module <<'NODE'
-          import semanticRelease from "semantic-release";
-          import { appendFileSync } from "node:fs";
-
-          const result = await semanticRelease();
-          const release = result?.nextRelease;
-
-          appendFileSync(
-            process.env.GITHUB_OUTPUT,
-            [
-              `released=${Boolean(release)}`,
-              `version=${release?.version ?? ""}`,
-              `type=${release?.type ?? ""}`,
-              ""
-            ].join("\n")
-          );
-          NODE
-
-      - name: Write release summary
-        env:
-          RELEASED: ${{ steps.semantic-release.outputs.released }}
-          VERSION: ${{ steps.semantic-release.outputs.version }}
-          RELEASE_TYPE: ${{ steps.semantic-release.outputs.type }}
-          SERVER_URL: ${{ github.server_url }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          {
-            echo "## Semantic release"
-            echo
-
-            if [ "$RELEASED" = "true" ]; then
-              echo "Created **${RELEASE_TYPE} release v${VERSION}**."
-              echo
-              echo "[View GitHub release](${SERVER_URL}/${REPOSITORY}/releases/tag/v${VERSION})"
-            else
-              echo "No semantic release was required."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: govuk-once/platform-shared-ci-cd/actions/semantic-release@v1

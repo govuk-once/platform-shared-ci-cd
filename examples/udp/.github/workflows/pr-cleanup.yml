@@ -1,0 +1,13 @@
+name: PR Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  pipeline:
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/pr-cleanup.yml@v1
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

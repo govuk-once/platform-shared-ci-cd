@@ -1,0 +1,47 @@
+name: Run hooks
+description: >-
+  Runs a list of `{name, run}` commands in order, each in its own log group with
+  `bash -euo pipefail`. Stops at the first failure and reports which hook failed.
+
+inputs:
+  hooks:
+    description: 'JSON array of `{"name": "...", "run": "..."}` objects.'
+    required: true
+  label:
+    description: Prefix for log groups and errors, e.g. `post-deploy`.
+    required: false
+    default: hook
+  working-directory:
+    description: Directory the hooks run in.
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Run ${{ inputs.label }} hooks
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        HOOKS: ${{ inputs.hooks }}
+        LABEL: ${{ inputs.label }}
+      run: |
+        count=$(jq 'length' <<< "${HOOKS:-[]}")
+        if [ "${count}" -eq 0 ]; then
+          echo "No ${LABEL} hooks configured"
+          exit 0
+        fi
+        for ((i = 0; i < count; i++)); do
+          name=$(jq -r --argjson i "$i" '.[$i].name' <<< "${HOOKS}")
+          run=$(jq -r --argjson i "$i" '.[$i].run' <<< "${HOOKS}")
+          echo "::group::${LABEL}: ${name}"
+          set +e
+          bash -euo pipefail -c "${run}"
+          rc=$?
+          set -e
+          echo "::endgroup::"
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error title=${LABEL} failed::${name} (exit ${rc})"
+            exit "${rc}"
+          fi
+        done

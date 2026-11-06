@@ -1,0 +1,119 @@
+name: Setup Node.js and pnpm
+description: >-
+  Installs pnpm (version from package.json `packageManager`), sets up Node.js,
+  optionally logs in to AWS CodeArtifact, and installs dependencies.
+
+inputs:
+  node-version:
+    description: >-
+      Node.js version. When empty, the version is read from `node-version-file`
+      if it exists, otherwise `24` is used.
+    required: false
+    default: ""
+  node-version-file:
+    description: File to read the Node.js version from when `node-version` is empty.
+    required: false
+    default: ".nvmrc"
+  cache:
+    description: Cache the pnpm store between runs ("true"/"false").
+    required: false
+    default: "true"
+  install:
+    description: Run `pnpm install` ("true"/"false").
+    required: false
+    default: "true"
+  install-args:
+    description: Arguments passed to `pnpm install`.
+    required: false
+    default: "--frozen-lockfile"
+  working-directory:
+    description: Directory containing package.json and the lockfile.
+    required: false
+    default: "."
+  codeartifact-account:
+    description: >-
+      AWS account ID that owns the CodeArtifact domain. When set, runs
+      `aws codeartifact login` before installing. AWS credentials must already
+      be configured.
+    required: false
+    default: ""
+  codeartifact-domain:
+    description: CodeArtifact domain.
+    required: false
+    default: "registry-prod"
+  codeartifact-repository:
+    description: CodeArtifact repository.
+    required: false
+    default: "registry-prod-repo"
+  codeartifact-namespace:
+    description: npm scope (without `@`) to route to CodeArtifact.
+    required: false
+    default: "govuk-connect"
+  codeartifact-region:
+    description: Region of the CodeArtifact domain.
+    required: false
+    default: "eu-west-2"
+
+outputs:
+  node-version:
+    description: The Node.js version that was requested.
+    value: ${{ steps.resolve.outputs.node-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Node.js version
+      id: resolve
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NODE_VERSION: ${{ inputs.node-version }}
+        NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+      run: |
+        if [ -z "${NODE_VERSION}" ] && [ -n "${NODE_VERSION_FILE}" ] && [ -f "${NODE_VERSION_FILE}" ]; then
+          NODE_VERSION=$(tr -d '[:space:]' < "${NODE_VERSION_FILE}")
+          echo "Using Node.js ${NODE_VERSION} from ${NODE_VERSION_FILE}"
+        fi
+        NODE_VERSION="${NODE_VERSION:-24}"
+        echo "node-version=${NODE_VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      with:
+        package_json_file: ${{ inputs.working-directory }}/package.json
+
+    - name: Setup Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ steps.resolve.outputs.node-version }}
+        cache: ${{ inputs.cache == 'true' && 'pnpm' || '' }}
+        cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+    - name: Authenticate to AWS CodeArtifact
+      if: inputs.codeartifact-account != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CODEARTIFACT_ACCOUNT: ${{ inputs.codeartifact-account }}
+        CODEARTIFACT_DOMAIN: ${{ inputs.codeartifact-domain }}
+        CODEARTIFACT_REPOSITORY: ${{ inputs.codeartifact-repository }}
+        CODEARTIFACT_NAMESPACE: ${{ inputs.codeartifact-namespace }}
+        CODEARTIFACT_REGION: ${{ inputs.codeartifact-region }}
+      run: |
+        aws codeartifact login \
+          --tool npm \
+          --namespace "${CODEARTIFACT_NAMESPACE}" \
+          --repository "${CODEARTIFACT_REPOSITORY}" \
+          --domain "${CODEARTIFACT_DOMAIN}" \
+          --domain-owner "${CODEARTIFACT_ACCOUNT}" \
+          --region "${CODEARTIFACT_REGION}"
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_ARGS: ${{ inputs.install-args }}
+      run: |
+        read -ra args <<< "${INSTALL_ARGS}"
+        pnpm install "${args[@]}"
