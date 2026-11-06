@@ -2,16 +2,16 @@
 
 A repository adopts complete PR, cleanup and release pipelines by committing:
 
-1. a config file, `.github/pipeline.yml`, describing *what* to run;
+1. a config file, `.github/pipeline.yml`, describing _what_ to run;
 2. three short caller workflows (copy them from [`examples/udp/.github/workflows`](../examples/udp/.github/workflows)).
 
 The pipeline logic (ordering, credentials, setup, notifications) lives in this repository and is versioned.
 
-| Workflow | Trigger in the caller | What it does |
-| --- | --- | --- |
-| `pr-pipeline.yml` | `pull_request` (opened, edited, synchronize, reopened) | Title check, quality checks, deploy the ephemeral environment and run its hooks. Editing only the PR title re-runs the title check without redeploying. |
-| `pr-cleanup.yml` | `pull_request` (closed) | Destroys the ephemeral environment. Shares a concurrency group with the PR deploy so they never overlap. |
-| `release-pipeline.yml` | `push` to `main` | Quality checks, semantic release, then each environment in order, then a failure notification. |
+| Workflow               | Trigger in the caller                                  | What it does                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-pipeline.yml`      | `pull_request` (opened, edited, synchronize, reopened) | Title check, quality checks, deploy the ephemeral environment and run its hooks. Editing only the PR title re-runs the title check without redeploying. |
+| `pr-cleanup.yml`       | `pull_request` (closed)                                | Destroys the ephemeral environment. Shares a concurrency group with the PR deploy so they never overlap.                                                |
+| `release-pipeline.yml` | `push` to `main`                                       | Quality checks, semantic release, then each environment in order, then a failure notification.                                                          |
 
 Complete worked examples: [UDP](../examples/udp) and [flex](../examples/flex).
 
@@ -37,42 +37,42 @@ Add `# yaml-language-server: $schema=<path or URL to schema/pipeline.schema.json
 
 ### Top level
 
-| Key | Default | Description |
-| --- | --- | --- |
-| `application` | (required) | Service name used in notifications. |
-| `node.version` | `.nvmrc`, then `24` | Node.js version. |
-| `node.codeartifact` | `false` | Log in to CodeArtifact before installing. Every job that installs then needs AWS credentials (see [Secrets](#secrets-and-environments)). |
-| `aws.region` | `eu-west-2` | Region for credentials. |
-| `release.enabled` | `true` | Run semantic-release. When `false`, the short commit SHA is the version. |
+| Key                 | Default             | Description                                                                                                                              |
+| ------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `application`       | (required)          | Service name used in notifications.                                                                                                      |
+| `node.version`      | `.nvmrc`, then `24` | Node.js version.                                                                                                                         |
+| `node.codeartifact` | `false`             | Log in to CodeArtifact before installing. Every job that installs then needs AWS credentials (see [Secrets](#secrets-and-environments)). |
+| `aws.region`        | `eu-west-2`         | Region for credentials.                                                                                                                  |
+| `release.enabled`   | `true`              | Run semantic-release. When `false`, the short commit SHA is the version.                                                                 |
 
 ### Stages: `pr.ephemeral` and each `environments[]` entry
 
-| Key | Default | Description |
-| --- | --- | --- |
-| `name` | `ephemeral` for `pr.ephemeral`; required for environments | Shown in job names; exported as `PIPELINE_ENV`. |
-| `environment` | `name` | GitHub environment the job runs in. Its `DEPLOYMENT_ROLE` secret and protection rules apply. |
-| `env` | — | `NAME: value` exported to every command. Placeholders: `{pr}`, `{sha}`, `{env}`, `{version}`. |
-| `working-directory` | `.` | Where `deploy`/`destroy` run and the version is stamped. Hooks always run from the repository root. |
-| `deploy` | (required) | Deploy command. |
-| `destroy` | — | `pr.ephemeral` only: run by `pr-cleanup.yml`. |
-| `pre-deploy`, `post-deploy` | — | Hook lists, run in order. Each item is a command string or `{name, run}`. |
-| `prerelease-tag` | — | Stamp `package.json` as `<version>-<tag>.<short-sha>`, e.g. `1.4.0-rc.abc1234`. |
-| `outputs-stack` | — | CloudFormation stack whose outputs are exported to post-deploy hooks as `STACK_OUTPUTS` JSON. |
-| `release-notification.slack-channel` | — | Send the Slack release notification after this stage for major/minor releases. Use on production. |
-| `timeout-minutes` | `60` | Job timeout, including hooks. |
+| Key                                  | Default                                                   | Description                                                                                         |
+| ------------------------------------ | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `name`                               | `ephemeral` for `pr.ephemeral`; required for environments | Shown in job names; exported as `PIPELINE_ENV`.                                                     |
+| `environment`                        | `name`                                                    | GitHub environment the job runs in. Its `DEPLOYMENT_ROLE` secret and protection rules apply.        |
+| `env`                                | —                                                         | `NAME: value` exported to every command. Placeholders: `{pr}`, `{sha}`, `{env}`, `{version}`.       |
+| `working-directory`                  | `.`                                                       | Where `deploy`/`destroy` run and the version is stamped. Hooks always run from the repository root. |
+| `deploy`                             | (required)                                                | Deploy command.                                                                                     |
+| `destroy`                            | —                                                         | `pr.ephemeral` only: run by `pr-cleanup.yml`.                                                       |
+| `pre-deploy`, `post-deploy`          | —                                                         | Hook lists, run in order. Each item is a command string or `{name, run}`.                           |
+| `prerelease-tag`                     | —                                                         | Stamp `package.json` as `<version>-<tag>.<short-sha>`, e.g. `1.4.0-rc.abc1234`.                     |
+| `outputs-stack`                      | —                                                         | CloudFormation stack whose outputs are exported to post-deploy hooks as `STACK_OUTPUTS` JSON.       |
+| `release-notification.slack-channel` | —                                                         | Send the Slack release notification after this stage for major/minor releases. Use on production.   |
+| `timeout-minutes`                    | `60`                                                      | Job timeout, including hooks.                                                                       |
 
 The release pipeline supports up to **four** environments.
 
 Every command (deploy, destroy, hooks) runs with `bash -euo pipefail` and sees:
 
-| Variable | Value |
-| --- | --- |
-| `PIPELINE_ENV` | Stage name. |
-| `PR_NUMBER` | PR number (PR pipelines only). |
-| `VERSION` | Version deployed, including any prerelease suffix (release pipeline only). |
-| `STACK_OUTPUTS` | JSON of `outputs-stack` outputs, e.g. `jq -r .ApiUrl <<< "$STACK_OUTPUTS"` (post-deploy only). |
-| `CDK_DEPLOYMENT_ROLE_ARN` | The assumed role ARN. |
-| AWS credentials | From the stage's `DEPLOYMENT_ROLE`. |
+| Variable                  | Value                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| `PIPELINE_ENV`            | Stage name.                                                                                    |
+| `PR_NUMBER`               | PR number (PR pipelines only).                                                                 |
+| `VERSION`                 | Version deployed, including any prerelease suffix (release pipeline only).                     |
+| `STACK_OUTPUTS`           | JSON of `outputs-stack` outputs, e.g. `jq -r .ApiUrl <<< "$STACK_OUTPUTS"` (post-deploy only). |
+| `CDK_DEPLOYMENT_ROLE_ARN` | The assumed role ARN.                                                                          |
+| AWS credentials           | From the stage's `DEPLOYMENT_ROLE`.                                                            |
 
 ### `pr.title`
 
@@ -80,35 +80,35 @@ Set `title: false` to disable. Otherwise see the [validate-pr-title inputs](../R
 
 ### `quality`
 
-| Key | Default | Description |
-| --- | --- | --- |
-| `setup` | — | Command run before checks, e.g. `python3 -m pip install checkov`. |
-| `checks` | — | Commands run in order in the **Checks** job. |
-| `aws` | `false` | Give the Checks job AWS credentials (e.g. for `cdk synth`). |
-| `environment` | `pr.ephemeral.environment`, else the first environment | GitHub environment whose `DEPLOYMENT_ROLE` quality jobs assume when they need AWS. |
-| `nx` | `false` | Set `NX_BASE`/`NX_HEAD` for `nx affected`. |
-| `dependency-review` | `false` | Fail PRs adding dependencies with high-severity vulnerabilities. |
-| `conventional-commits` | `false` | Require at least one Conventional Commit in the PR. |
-| `sonar` | — | `true`, or `{test, args}`: run `test` for coverage, then SonarQube with quality-gate wait. |
+| Key                    | Default                                                | Description                                                                                |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `setup`                | —                                                      | Command run before checks, e.g. `python3 -m pip install checkov`.                          |
+| `checks`               | —                                                      | Commands run in order in the **Checks** job.                                               |
+| `aws`                  | `false`                                                | Give the Checks job AWS credentials (e.g. for `cdk synth`).                                |
+| `environment`          | `pr.ephemeral.environment`, else the first environment | GitHub environment whose `DEPLOYMENT_ROLE` quality jobs assume when they need AWS.         |
+| `nx`                   | `false`                                                | Set `NX_BASE`/`NX_HEAD` for `nx affected`.                                                 |
+| `dependency-review`    | `false`                                                | Fail PRs adding dependencies with high-severity vulnerabilities.                           |
+| `conventional-commits` | `false`                                                | Require at least one Conventional Commit in the PR.                                        |
+| `sonar`                | —                                                      | `true`, or `{test, args}`: run `test` for coverage, then SonarQube with quality-gate wait. |
 
 ### `notifications`
 
-| Key | Default | Description |
-| --- | --- | --- |
-| `topic-arn` / `topic-arn-ssm-parameter` | — | AWS Chatbot SNS topic. |
-| `notify-on` | `[failure]` when a topic is set | `success` posts after each environment deploys; `failure` posts once if the release pipeline fails, naming the stage. |
+| Key                                     | Default                         | Description                                                                                                           |
+| --------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `topic-arn` / `topic-arn-ssm-parameter` | —                               | AWS Chatbot SNS topic.                                                                                                |
+| `notify-on`                             | `[failure]` when a topic is set | `success` posts after each environment deploys; `failure` posts once if the release pipeline fails, naming the stage. |
 
 ## Secrets and environments
 
 Callers pass `secrets: inherit`. The pipelines expect these names:
 
-| Secret | Scope | Needed for |
-| --- | --- | --- |
-| `DEPLOYMENT_ROLE` | **Each GitHub environment** (`ephemeral`, `dev`, `staging`, `production`, …) | Deploying that stage, and quality/release jobs when AWS is needed. |
-| `CODEARTIFACT_ACCOUNT` | Repository or organisation | `node.codeartifact: true`. |
-| `SONAR_TOKEN`, `SONAR_URL` | Repository or organisation | `quality.sonar`. |
-| `NOTIFICATIONS_ROLE` | Repository | Publishing deployment notifications (e.g. a dev-account topic). Without it, success notifications use the stage's role and failure notifications are skipped with a warning. |
-| `GH_APP_ID`, `GH_APP_PRIVATE_KEY` | Repository | Optional. semantic-release uses a GitHub App token, e.g. when branch protection blocks `github.token`. |
+| Secret                            | Scope                                                                        | Needed for                                                                                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEPLOYMENT_ROLE`                 | **Each GitHub environment** (`ephemeral`, `dev`, `staging`, `production`, …) | Deploying that stage, and quality/release jobs when AWS is needed.                                                                                                           |
+| `CODEARTIFACT_ACCOUNT`            | Repository or organisation                                                   | `node.codeartifact: true`.                                                                                                                                                   |
+| `SONAR_TOKEN`, `SONAR_URL`        | Repository or organisation                                                   | `quality.sonar`.                                                                                                                                                             |
+| `NOTIFICATIONS_ROLE`              | Repository                                                                   | Publishing deployment notifications (e.g. a dev-account topic). Without it, success notifications use the stage's role and failure notifications are skipped with a warning. |
+| `GH_APP_ID`, `GH_APP_PRIVATE_KEY` | Repository                                                                   | Optional. semantic-release uses a GitHub App token, e.g. when branch protection blocks `github.token`.                                                                       |
 
 ### One-off setup per repository
 
@@ -140,7 +140,31 @@ Callers can't insert their own jobs between shared stages, so repo-specific work
 - To test a branch from a sandbox repository:
   1. Run `scripts/release.sh --pin <branch>` on a throwaway branch and push it.
   2. In the sandbox, reference the pipelines `@<that branch>`.
-- **Release** with the *Release* workflow (manual): it runs the tests, then `scripts/release.sh vX.Y.Z --push`. That rewrites internal references to `@vX.Y.Z` in a release-only commit, tags it, moves `v1` and creates the GitHub release. Each tag therefore only uses code from that tag.
+- **Release** with the _Release_ workflow (manual): it runs the tests, then `scripts/release.sh vX.Y.Z --push`. That rewrites internal references to `@vX.Y.Z` in a release-only commit, tags it, moves `v1` and creates the GitHub release. Each tag therefore only uses code from that tag.
 - Loader tests: `node --test actions/load-pipeline-config/` (the example configs are checked when `yq` is installed).
 
+### Running the example pipelines locally with act
 
+`scripts/act.sh` runs an example's complete pipeline with [act](https://github.com/nektos/act) (`brew install act`, plus Docker):
+
+```sh
+pnpm act:pr-open           # PR opened: title, quality, ephemeral deploy and hooks
+pnpm act:pr-closed         # PR closed: ephemeral destroy
+pnpm act:push              # push to main: quality, release, every environment
+pnpm act:all               # all three events for every example
+
+pnpm act push flex                        # pick the example (default udp)
+STUB_RELEASE_TYPE=patch pnpm act:push     # major | minor | patch | none
+pnpm act pr-open udp -- -j title          # extra act arguments after --
+```
+
+What runs for real: this repository's workflows and actions from your working copy (not the published `v1`), the example's `pipeline.yml`, and its `scripts/`.
+
+What is stubbed, in `tests/stubs`:
+
+- Third-party actions (`actions.map`): AWS credentials, checkout, dependency review, Sonar, Nx SHAs, setup-node/pnpm, cache, GitHub App token, platform notifications. Every pinned ref of those repositories is mapped, so bumping a SHA doesn't bypass the stub.
+- CLIs (`bin/`): `aws` (with canned stack outputs, CodeBuild and SSM answers), `gh`, `pnpm`, `npx`, `checkov`, `semgrep`, `pre-commit`, `cfn-policy-validator`, `python3 -m pip`. Commands from `pipeline.yml` such as `pnpm build:all` are logged, not run, because they belong to the consuming repository.
+- semantic-release: returns a fake result and never tags or publishes.
+- Secrets: dummy values in `secrets.env`.
+
+Each run builds a throwaway git workspace in `.act/workspaces/<example>` from `tests/fixtures/node-project`, the example, and `tests/fixtures/examples/<example>` (files the example's scripts expect, such as `cdk/`). The PR title comes from the first line of the example's `pr.title.examples`. Jobs run one at a time, because act 0.2.97 can crash (`concurrent map writes`) when it runs composite actions in parallel. Set `ACT_CONCURRENT_JOBS` to change that.

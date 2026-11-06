@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Stub GitHub CLI: no comments exist, releases have placeholder notes.
+source "$(dirname "$0")/_log"
+case "$1 $2" in
+  "release view") echo "Stub release notes." ;;
+  *) ;;
+esac

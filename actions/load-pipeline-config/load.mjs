@@ -7,7 +7,7 @@
 //   env PR_NUMBER, GITHUB_SHA       placeholder values
 //   env GITHUB_OUTPUT               when set, outputs are written there
 
-import { readFileSync, appendFileSync } from "node:fs";
+import { readFileSync, appendFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export class ConfigError extends Error {}
@@ -338,4 +338,7 @@ function main() {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
+// Compare real paths: import.meta.url has symlinks resolved but argv[1] does not
+// (e.g. /var/run -> /run in the act runner image), so a plain comparison fails.
+const entry = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : "";
+if (import.meta.url === entry) main();

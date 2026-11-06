@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Stub npx. `cdk synth [stack]` writes an empty template so callers that read it work.
+source "$(dirname "$0")/_log"
+if [ "$1" = "cdk" ] && [ "$2" = "synth" ]; then
+  mkdir -p cdk.out
+  stack="${3:-}"
+  if [ -n "${stack}" ] && [ "${stack#-}" = "${stack}" ]; then echo '{}' > "cdk.out/${stack}.template.json"; fi
+fi
+exit 0

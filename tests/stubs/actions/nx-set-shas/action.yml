@@ -1,0 +1,13 @@
+name: "Stub: nrwl/nx-set-shas"
+description: Local act stand-in for nrwl/nx-set-shas. Logs its inputs and does nothing else.
+inputs:
+  main-branch-name: { required: false }
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "[stub] nx-set-shas"
+        echo "NX_BASE=$(git rev-list --max-parents=0 HEAD | tail -1)" >> "$GITHUB_ENV"
+        echo "NX_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"

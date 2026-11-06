@@ -51,7 +51,8 @@ jobs:
   title:
     name: Validate PR title
     needs: config
-    if: fromJSON(needs.config.outputs.config).pr.title != null
+    # !(x == null) rather than x != null: act treats a JSON null as != null.
+    if: ${{ !(fromJSON(needs.config.outputs.config).pr.title == null) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

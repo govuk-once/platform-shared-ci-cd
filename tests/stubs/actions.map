@@ -1,0 +1,13 @@
+# <third-party action repository> <stub directory under tests/stubs/actions>
+# scripts/act.sh maps every ref of these repositories used in .github/ and
+# actions/ to the stub, so bumping a pinned SHA does not bypass the stub.
+actions/checkout                                     checkout
+aws-actions/configure-aws-credentials                configure-aws-credentials
+actions/dependency-review-action                     dependency-review
+SonarSource/sonarqube-scan-action                    sonarqube-scan
+nrwl/nx-set-shas                                     nx-set-shas
+pnpm/action-setup                                    pnpm-setup
+actions/setup-node                                   setup-node
+actions/cache                                        cache
+actions/create-github-app-token                      github-app-token
+govuk-once/govuk-platform-notifications-gh-action    platform-notifications

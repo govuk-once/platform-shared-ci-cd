@@ -1,0 +1,13 @@
+name: "Stub: actions/create-github-app-token"
+description: Local act stand-in for actions/create-github-app-token. Logs its inputs and does nothing else.
+inputs:
+  app-id: { required: false }
+  private-key: { required: false }
+outputs:
+  token: { value: stub-app-token }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "[stub] create-github-app-token"
