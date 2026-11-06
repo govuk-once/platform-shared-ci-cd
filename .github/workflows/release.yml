@@ -1,0 +1,75 @@
+name: Release
+
+# Releases this repository: runs the tests, then scripts/release.sh, which
+# pins internal references to the new tag in a release-only commit, tags it,
+# moves the floating major tag (e.g. v1) and creates the GitHub release.
+#
+# Run manually from main. Not a reusable workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump from the latest vX.Y.Z tag"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: minor
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # The release commit changes .github/workflows, which GITHUB_TOKEN may not
+      # push. The app needs Contents and Workflows write, and a bypass on any
+      # tag ruleset covering v*, because the major tag is force-moved.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Test
+        run: node --test actions/
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Release
+        id: release
+        env:
+          BUMP: ${{ inputs.bump }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: scripts/release.sh "${BUMP}" --push
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: echo "Released ${VERSION}" >>"${GITHUB_STEP_SUMMARY}"

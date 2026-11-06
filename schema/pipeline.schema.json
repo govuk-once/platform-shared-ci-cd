@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/govuk-once/platform-shared-ci-cd/schema/pipeline.schema.json",
+  "title": "Shared pipeline config",
+  "description": "Configuration for the govuk-once/platform-shared-ci-cd PR, cleanup and release pipelines. Commit as .github/pipeline.yml.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["application"],
+  "properties": {
+    "application": {
+      "type": "string",
+      "description": "Human-readable service name used in notifications, e.g. UDP."
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": ["string", "number"],
+          "description": "Node.js version. Defaults to .nvmrc, then 24."
+        },
+        "codeartifact": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log in to CodeArtifact (CODEARTIFACT_ACCOUNT secret) before installing. Jobs then need AWS credentials."
+        }
+      }
+    },
+    "aws": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "region": { "type": "string", "default": "eu-west-2" }
+      }
+    },
+    "pr": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "PR title check. Set to false to disable.",
+          "oneOf": [
+            { "const": false },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pattern": { "type": "string", "description": "Extended regular expression the title must match." },
+                "format": { "type": "string", "description": "Human-readable format shown on failure." },
+                "examples": { "type": "string", "description": "Example titles, one per line." },
+                "guidance-url": { "type": "string" },
+                "skip-actors": { "type": "string", "default": "dependabot[bot]" },
+                "comment": { "type": "boolean", "default": false, "description": "Maintain a guidance comment on the PR." }
+              }
+            }
+          ]
+        },
+        "ephemeral": {
+          "$ref": "#/$defs/stage",
+          "description": "Per-PR environment, deployed on every PR push and destroyed when the PR closes. name defaults to 'ephemeral'."
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "type": "string",
+          "description": "GitHub environment whose DEPLOYMENT_ROLE quality jobs assume. Defaults to the ephemeral environment when AWS credentials are needed."
+        },
+        "aws": { "type": "boolean", "default": false, "description": "Configure AWS credentials in the checks job." },
+        "nx": { "type": "boolean", "default": false, "description": "Set NX_BASE/NX_HEAD for `nx affected` commands." },
+        "setup": { "type": "string", "description": "Command run once before checks, e.g. installing Python tooling." },
+        "checks": { "$ref": "#/$defs/hooks", "description": "Commands run in order in the checks job." },
+        "dependency-review": { "type": "boolean", "default": false, "description": "Fail PRs that add dependencies with high-severity vulnerabilities." },
+        "conventional-commits": { "type": "boolean", "default": false, "description": "Require at least one Conventional Commit in the PR." },
+        "sonar": {
+          "description": "SonarQube scan (SONAR_TOKEN and SONAR_URL secrets).",
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "test": { "type": "string", "description": "Command run before the scan to produce coverage." },
+                "args": { "type": "string", "description": "Extra scanner arguments." }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Run semantic-release before promoting." }
+      }
+    },
+    "environments": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "Environments promoted in order on each push to main.",
+      "items": { "$ref": "#/$defs/stage", "required": ["name", "deploy"] }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "topic-arn": { "type": "string" },
+        "topic-arn-ssm-parameter": { "type": "string" },
+        "notify-on": {
+          "type": "array",
+          "items": { "enum": ["success", "failure"] },
+          "description": "Defaults to [failure] when a topic is set."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hooks": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "properties": {
+              "name": { "type": "string" },
+              "run": { "type": "string" }
+            }
+          }
+        ]
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deploy"],
+      "properties": {
+        "name": { "type": "string" },
+        "environment": { "type": "string", "description": "GitHub environment holding DEPLOYMENT_ROLE. Defaults to name." },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for all commands. Placeholders: {pr}, {sha}, {env}, {version}.",
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "working-directory": { "type": "string", "default": "." },
+        "deploy": { "type": "string", "description": "Deploy command." },
+        "destroy": { "type": "string", "description": "Destroy command (pr.ephemeral only)." },
+        "pre-deploy": { "$ref": "#/$defs/hooks" },
+        "post-deploy": { "$ref": "#/$defs/hooks", "description": "Run after deploy, e.g. e2e tests. A failure stops promotion." },
+        "prerelease-tag": { "type": "string", "description": "Deploy as <version>-<tag>.<short-sha>." },
+        "outputs-stack": { "type": "string", "description": "CloudFormation stack whose outputs are exported as STACK_OUTPUTS." },
+        "release-notification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slack-channel"],
+          "properties": { "slack-channel": { "type": "string" } },
+          "description": "Send the Slack release notification for major/minor releases after this stage."
+        },
+        "timeout-minutes": { "type": "integer", "minimum": 1, "default": 60 }
+      }
+    }
+  }
+}

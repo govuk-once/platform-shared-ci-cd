@@ -9,6 +9,11 @@ on:
         type: string
         default: "24"
 
+    secrets:
+      deployment-role:
+        required: false
+        description: "Deprecated and unused. Kept so callers that still pass it (v1.1.x) keep working."
+
     outputs:
       released:
         description: "Whether a new semantic release was created"

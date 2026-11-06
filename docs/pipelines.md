@@ -140,7 +140,10 @@ Callers can't insert their own jobs between shared stages, so repo-specific work
 - To test a branch from a sandbox repository:
   1. Run `scripts/release.sh --pin <branch>` on a throwaway branch and push it.
   2. In the sandbox, reference the pipelines `@<that branch>`.
-- **Release** with the _Release_ workflow (manual): it runs the tests, then `scripts/release.sh vX.Y.Z --push`. That rewrites internal references to `@vX.Y.Z` in a release-only commit, tags it, moves `v1` and creates the GitHub release. Each tag therefore only uses code from that tag.
+- **Release** with the _Release_ workflow (manual, from `main`, choose `patch`, `minor` or `major`): it runs the tests, then `scripts/release.sh <bump> --push`. That rewrites internal references to `@vX.Y.Z` in a release-only commit, tags it, moves `v1` and creates the GitHub release. Each tag therefore only uses code from that tag.
+  - Run `scripts/release.sh <bump>` without `--push` to build the tags locally and inspect them first.
+  - The script fails if an internal reference points at a workflow or action that doesn't exist, or (for a major release) if `main` still references the previous major.
+  - The workflow pushes with a GitHub App token (`RELEASE_APP_ID`, `RELEASE_APP_PRIVATE_KEY` repository secrets), because `GITHUB_TOKEN` can't push commits that change `.github/workflows`. The app needs **Contents** and **Workflows** write, and a bypass on any tag ruleset covering `v*`, since the major tag is force-moved.
 - Loader tests: `node --test actions/load-pipeline-config/` (the example configs are checked when `yq` is installed).
 
 ### Running the example pipelines locally with act
