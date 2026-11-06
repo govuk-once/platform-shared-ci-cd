@@ -61,7 +61,7 @@ jobs:
           cache: "pnpm"
 
       - name: Configure CodeArtifact auth
-        uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@ce0d38a2fb22c5f6bd8b8764a1572fbc080a52d1
+        uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@408ae36872222a323bf4ba0b09397d08af8186b1
         with:
           role-to-assume: ${{ secrets.deployment-role }}
 
