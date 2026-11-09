@@ -1,0 +1,146 @@
+name: Quality Checks
+
+# Config-driven quality checks, each job running only when configured:
+#   checks   - optional setup command, then the ordered quality.checks commands
+#   security - dependency review and Conventional Commit check (pull requests only)
+#   sonar    - tests for coverage, then SonarQube scan and quality gate
+#
+# Jobs that need AWS (quality.aws, or node.codeartifact for installs) run in
+# quality.environment and assume its DEPLOYMENT_ROLE secret.
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: Normalised pipeline config JSON (load-pipeline-config output).
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+jobs:
+  checks:
+    name: Checks
+    if: fromJSON(inputs.config).quality.has-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ fromJSON(inputs.config).quality.environment }}
+    env:
+      NEEDS_AWS: ${{ fromJSON(inputs.config).quality.aws }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        if: env.NEEDS_AWS == 'true'
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ fromJSON(inputs.config).aws.region }}
+          role-session-name: quality-${{ github.run_id }}
+
+      - name: Setup Node.js and pnpm
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        with:
+          node-version: ${{ fromJSON(inputs.config).node.version }}
+          codeartifact-role: ${{ fromJSON(inputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
+
+      - name: Set Nx base and head SHAs
+        if: fromJSON(inputs.config).quality.nx
+        uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1 # v5.0.1
+
+      - name: Setup
+        if: fromJSON(inputs.config).quality.setup != ''
+        env:
+          SETUP: ${{ fromJSON(inputs.config).quality.setup }}
+        run: bash -euo pipefail -c "${SETUP}"
+
+      - name: Run checks
+        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@v1
+        with:
+          label: check
+          hooks: ${{ toJSON(fromJSON(inputs.config).quality.checks) }}
+
+  security:
+    name: Security
+    if: fromJSON(inputs.config).quality.has-security && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Dependency review
+        if: fromJSON(inputs.config).quality.dependency-review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          license-check: false
+          show-openssf-scorecard: false
+
+      - name: Validate Conventional Commits
+        if: fromJSON(inputs.config).quality.conventional-commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|chore|build|ci|revert)(\(.+\))?!?:'
+          COMMITS=$(git log --no-merges --pretty=format:'%s' "${BASE_SHA}..${HEAD_SHA}")
+
+          if [ -z "${COMMITS}" ]; then
+            echo "::error::No commits found in this pull request"
+            exit 1
+          fi
+
+          VALID=0
+          while IFS= read -r commit; do
+            if grep -qE "${PATTERN}" <<< "${commit}"; then
+              VALID=$((VALID + 1))
+              echo "✓ ${commit}"
+            else
+              echo "✗ ${commit}"
+            fi
+          done <<< "${COMMITS}"
+
+          if [ "${VALID}" -eq 0 ]; then
+            echo "::error::No commit follows the Conventional Commits format '<type>(<scope>): <description>'. Types: feat, fix, docs, style, refactor, perf, test, chore, build, ci, revert."
+            exit 1
+          fi
+          echo "${VALID} Conventional Commit(s) found"
+
+  sonar:
+    name: SonarQube
+    # !(x == null) rather than x != null: act treats a JSON null as != null.
+    if: ${{ !(fromJSON(inputs.config).quality.sonar == null) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ fromJSON(inputs.config).node.codeartifact && fromJSON(inputs.config).quality.environment || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js and pnpm
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        with:
+          node-version: ${{ fromJSON(inputs.config).node.version }}
+          codeartifact-role: ${{ fromJSON(inputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
+
+      - name: SonarQube scan
+        uses: govuk-once/platform-shared-ci-cd/actions/sonar-scan@v1
+        with:
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-host-url: ${{ secrets.SONAR_URL }}
+          test-command: ${{ fromJSON(inputs.config).quality.sonar.test }}
+          args: ${{ fromJSON(inputs.config).quality.sonar.args }}

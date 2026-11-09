@@ -1,0 +1,45 @@
+name: Load pipeline config
+description: >-
+  Reads the calling repository's pipeline config (`.github/pipeline.yml` by
+  default), validates it, applies defaults and expands placeholders. Expects the
+  repository to be checked out. Requires `yq` (preinstalled on GitHub-hosted
+  Ubuntu runners) and Node.js.
+
+inputs:
+  path:
+    description: Path to the pipeline config file.
+    required: false
+    default: ".github/pipeline.yml"
+
+outputs:
+  config:
+    description: The normalised config as JSON.
+    value: ${{ steps.load.outputs.config }}
+  environment-count:
+    description: Number of promotion environments.
+    value: ${{ steps.load.outputs.environment-count }}
+  has-ephemeral:
+    description: "`true` when `pr.ephemeral` is configured."
+    value: ${{ steps.load.outputs.has-ephemeral }}
+  has-destroy:
+    description: "`true` when `pr.ephemeral.destroy` is configured."
+    value: ${{ steps.load.outputs.has-destroy }}
+
+runs:
+  using: composite
+  steps:
+    - name: Load pipeline config
+      id: load
+      shell: bash
+      env:
+        CONFIG_PATH: ${{ inputs.path }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        LOADER: ${{ github.action_path }}/load.mjs
+      run: |
+        if [ ! -f "${CONFIG_PATH}" ]; then
+          echo "::error title=Missing pipeline config::${CONFIG_PATH} not found. See the platform-shared-ci-cd docs/pipelines.md."
+          exit 1
+        fi
+        JSON_FILE="${RUNNER_TEMP}/pipeline-config.json"
+        yq -o=json 'explode(.)' "${CONFIG_PATH}" > "${JSON_FILE}"
+        node "${LOADER}" "${JSON_FILE}"

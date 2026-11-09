@@ -1,0 +1,118 @@
+name: Notify deployment
+description: >-
+  Publishes an AWS Chatbot custom notification to an SNS topic announcing a
+  deployment (success or failure), or any custom title and message. Expects AWS
+  credentials with `sns:Publish` (and `ssm:GetParameter` when the topic is read
+  from SSM) to be configured. By default a failed notification does not fail
+  the job.
+
+inputs:
+  application:
+    description: Human-readable name of the service, e.g. `Flex`.
+    required: true
+  environment:
+    description: Environment that was deployed, e.g. `staging`.
+    required: false
+    default: ""
+  version:
+    description: Version that was deployed, without the `v` prefix.
+    required: false
+    default: ""
+  status:
+    description: "`success` or `failure`."
+    required: false
+    default: "success"
+  title:
+    description: Overrides the generated notification title.
+    required: false
+    default: ""
+  message:
+    description: Overrides the generated notification body (Slack markdown).
+    required: false
+    default: ""
+  topic-arn:
+    description: SNS topic ARN. Takes precedence over `topic-arn-ssm-parameter`.
+    required: false
+    default: ""
+  topic-arn-ssm-parameter:
+    description: SSM parameter name holding the SNS topic ARN.
+    required: false
+    default: ""
+  fail-on-error:
+    description: Fail the step if the notification cannot be sent ("true"/"false").
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Publish deployment notification
+      shell: bash
+      env:
+        APPLICATION: ${{ inputs.application }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        VERSION: ${{ inputs.version }}
+        STATUS: ${{ inputs.status }}
+        TITLE: ${{ inputs.title }}
+        MESSAGE: ${{ inputs.message }}
+        TOPIC_ARN: ${{ inputs.topic-arn }}
+        TOPIC_ARN_SSM_PARAMETER: ${{ inputs.topic-arn-ssm-parameter }}
+        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        notify() {
+          set -euo pipefail
+
+          if [ -z "${TOPIC_ARN}" ]; then
+            if [ -z "${TOPIC_ARN_SSM_PARAMETER}" ]; then
+              echo "::error::Either topic-arn or topic-arn-ssm-parameter must be set"
+              return 1
+            fi
+            TOPIC_ARN=$(aws ssm get-parameter --name "${TOPIC_ARN_SSM_PARAMETER}" \
+              --query "Parameter.Value" --output text)
+          fi
+
+          local label="${VERSION:+v${VERSION}}"
+          label="${label:-a new version}"
+
+          if [ -z "${TITLE}" ]; then
+            if [ "${STATUS}" = "failure" ]; then
+              TITLE="${APPLICATION} deployment failed: ${label} to ${ENVIRONMENT}"
+            else
+              TITLE="${APPLICATION} deployed: ${label} to ${ENVIRONMENT}"
+            fi
+          fi
+
+          if [ -z "${MESSAGE}" ]; then
+            if [ "${STATUS}" = "failure" ]; then
+              MESSAGE=$(printf 'Deployment of *%s* to *%s* failed.\n\n<%s|View workflow run>' \
+                "${label}" "${ENVIRONMENT}" "${RUN_URL}")
+            else
+              MESSAGE=$(printf '*%s* has been deployed to *%s*.\n\n<%s|View workflow run>' \
+                "${label}" "${ENVIRONMENT}" "${RUN_URL}")
+            fi
+          fi
+
+          local payload
+          payload=$(jq -n --arg title "${TITLE}" --arg desc "${MESSAGE}" '{
+            version: "1.0",
+            source: "custom",
+            content: { textType: "client-markdown", title: $title, description: $desc }
+          }')
+
+          aws sns publish --topic-arn "${TOPIC_ARN}" --message "${payload}" > /dev/null
+          echo "Published notification: ${TITLE}"
+        }
+
+        # Run in a subshell outside a conditional so `set -e` applies inside it.
+        set +e
+        (notify)
+        rc=$?
+        set -e
+
+        if [ "${rc}" -ne 0 ]; then
+          if [ "${FAIL_ON_ERROR}" = "true" ]; then
+            exit "${rc}"
+          fi
+          echo "::warning::Failed to send deployment notification"
+        fi

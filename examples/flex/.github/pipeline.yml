@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=../../../schema/pipeline.schema.json
+#
+# Example: flex on the shared pipelines.
+# Replaces main.yml, ci-pr-quality-checks.yml, ci-pr-cleanup.yml,
+# ci-pr-title-check.yml, _quality-checks.yml, _build-deploy.yml,
+# _moduleE2E.yml and _notify-deployment.yml.
+# Kept as-is: ci-pr-validate-openapi.yml (label-triggered), zap.yml,
+# performance-tests.yml, docs.yml.
+
+application: Flex
+
+pr:
+  title:
+    comment: true
+    guidance-url: https://github.com/govuk-once/flex/blob/main/docs/releases.md
+    examples: |
+      FLEX-123 feat: add user preferences endpoint
+      FLEX-456 fix(udp): handle empty payload
+      FLEX-789 feat!: drop legacy auth
+
+  ephemeral:
+    name: pr
+    environment: ephemeral # holds the dev account DEPLOYMENT_ROLE
+    env:
+      STAGE: "pr-{pr}"
+    pre-deploy:
+      - pnpm openapi:generate
+    working-directory: platform/infra/flex
+    deploy: pnpm run deploy
+    post-deploy: &e2e
+      - name: Platform E2E
+        run: pnpm --filter @flex/e2e test:e2e:platform
+      - name: Module E2E
+        run: pnpm -r --filter './domains/*' --if-present --no-bail test:e2e
+    destroy: pnpm run destroy --force
+
+quality:
+  aws: true # checkov, cdk synth and IAM Access Analyzer use real credentials
+  nx: true
+  setup: python3 -m pip install pre-commit checkov cfn-policy-validator
+  checks:
+    - name: Hygiene
+      run: pre-commit run --all-files --show-diff-on-failure
+    - name: Lint
+      run: pnpm run lint
+    - name: Type check
+      run: pnpm run tsc
+    - name: Validate domain integration routes
+      run: pnpm run validate:integrations
+    - name: Validate Macie coverage
+      run: pnpm run validate:macie-coverage
+    - name: Checkov
+      run: pnpm run checkov
+    - name: CDK synth
+      run: pnpm --filter @platform/flex synth
+    - name: IAM Access Analyzer
+      run: ./scripts/ci/iam-access-analyzer.sh
+  dependency-review: true
+  sonar:
+    # Dummy credentials: unit tests must not reach AWS.
+    test: >-
+      AWS_REGION=eu-west-2 AWS_DEFAULT_REGION=eu-west-2
+      AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test
+      pnpm exec nx run-many --target=test --all --run --coverage --skip-nx-cache
+
+environments:
+  - name: development
+    env: { STAGE: development }
+    pre-deploy: ["pnpm openapi:generate"]
+    working-directory: platform/infra/flex
+    deploy: pnpm run deploy
+    post-deploy: *e2e
+
+  - name: staging
+    env: { STAGE: staging }
+    pre-deploy: ["pnpm openapi:generate"]
+    working-directory: platform/infra/flex
+    deploy: pnpm run deploy
+    post-deploy: *e2e
+
+  - name: production
+    env: { STAGE: production }
+    pre-deploy: ["pnpm openapi:generate"]
+    working-directory: platform/infra/flex
+    deploy: pnpm run deploy
+
+notifications:
+  topic-arn-ssm-parameter: /development/flex/topic/release-notifications
+  notify-on: [success, failure]

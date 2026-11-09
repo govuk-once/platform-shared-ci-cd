@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Stub AWS CLI: canned answers for the calls the pipelines and example scripts make.
+source "$(dirname "$0")/_log"
+args="$*"
+case "$1 $2" in
+  "sts get-caller-identity")
+    if [[ "${args}" == *"Account"* ]]; then echo "000000000000"
+    else echo "arn:aws:sts::000000000000:assumed-role/act-stub/session"; fi ;;
+  "cloudformation describe-stacks")
+    if [[ "${args}" == *"PerfCodeBuildProjectName"* ]]; then echo "stub-perf-project"
+    elif [[ "${args}" == *"StackStatus"* ]]; then echo "UPDATE_COMPLETE"
+    else
+      echo '[{"OutputKey":"CodeBuildProjectName","OutputValue":"stub-e2e-project"},{"OutputKey":"SourceBucketName","OutputValue":"stub-source-bucket"},{"OutputKey":"SourcePath","OutputValue":"source/source.zip"}]'
+    fi ;;
+  "codebuild start-build") echo "stub-project:00000000-0000-0000-0000-000000000000" ;;
+  "codebuild batch-get-builds") printf 'SUCCEEDED\tCOMPLETED\n' ;;
+  "ssm get-parameter")
+    if [[ "${args}" == *"topic"* ]]; then echo "arn:aws:sns:eu-west-2:000000000000:act-stub-topic"
+    else echo "stub-parameter-value"; fi ;;
+  "codeartifact login") echo "Successfully configured npm to use AWS CodeArtifact (stub)" ;;
+  *) ;;  # s3 cp, sns publish, ssm put-parameter, ...: succeed silently
+esac

@@ -1,0 +1,250 @@
+name: Release Pipeline
+
+# Release pipeline driven by the caller's .github/pipeline.yml:
+#   config -> quality -> semantic release -> environments[0] -> ... -> environments[3]
+#   -> failure notification
+#
+# Each environment runs as a deploy-stage.yml job in its GitHub environment, so
+# approvals and secrets come from the environment settings. GitHub cannot
+# generate sequential jobs dynamically, so there are four fixed stage slots;
+# unused slots are skipped.
+#
+# Call from a workflow triggered by push to main with `secrets: inherit`.
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to the pipeline config in the calling repository.
+        required: false
+        type: string
+        default: ".github/pipeline.yml"
+    outputs:
+      version:
+        description: The version that was deployed.
+        value: ${{ jobs.release.outputs.deployed-version }}
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+  actions: read
+
+jobs:
+  config:
+    name: Load pipeline config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      config: ${{ steps.load.outputs.config }}
+      environment-count: ${{ steps.load.outputs.environment-count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: ${{ inputs.config-path }}
+          sparse-checkout-cone-mode: false
+
+      - name: Load pipeline config
+        id: load
+        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@v1
+        with:
+          path: ${{ inputs.config-path }}
+
+  quality:
+    name: Quality
+    needs: config
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/quality-checks.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+    secrets: inherit
+
+  release:
+    name: Release
+    needs: [config, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # CodeArtifact auth assumes the DEPLOYMENT_ROLE of an environment.
+    environment: ${{ fromJSON(needs.config.outputs.config).node.codeartifact && fromJSON(needs.config.outputs.config).quality.environment || '' }}
+    concurrency:
+      group: ${{ github.repository }}-semantic-release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    env:
+      HAS_GH_APP: ${{ secrets.GH_APP_ID != '' && secrets.GH_APP_PRIVATE_KEY != '' }}
+      ENABLED: ${{ fromJSON(needs.config.outputs.config).release.enabled }}
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      type: ${{ steps.release.outputs.type }}
+      deployed-version: ${{ steps.release.outputs.deployed-version || steps.no-release.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Use commit SHA as version
+        id: no-release
+        if: env.ENABLED != 'true'
+        run: echo "version=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: env.ENABLED == 'true' && env.HAS_GH_APP == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Setup Node.js and pnpm
+        if: env.ENABLED == 'true'
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        with:
+          node-version: ${{ fromJSON(needs.config.outputs.config).node.version }}
+          codeartifact-role: ${{ fromJSON(needs.config.outputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
+
+      - name: Run semantic-release
+        id: release
+        if: env.ENABLED == 'true'
+        uses: govuk-once/platform-shared-ci-cd/actions/semantic-release@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
+
+  stage-1:
+    name: ${{ fromJSON(needs.config.outputs.config).environments[0].name || 'Stage 1' }}
+    needs: [config, quality, release]
+    if: >-
+      !cancelled() &&
+      needs.config.result == 'success' &&
+      needs.quality.result != 'failure' &&
+      needs.release.result == 'success' &&
+      fromJSON(needs.config.outputs.environment-count) >= 1
+    concurrency:
+      group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[0].name }}
+      cancel-in-progress: false
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+      stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[0]) }}
+      version: ${{ needs.release.outputs.deployed-version }}
+      release-type: ${{ needs.release.outputs.type }}
+    secrets: inherit
+
+  stage-2:
+    name: ${{ fromJSON(needs.config.outputs.config).environments[1].name || 'Stage 2' }}
+    needs: [config, release, stage-1]
+    if: >-
+      !cancelled() &&
+      needs.stage-1.result == 'success' &&
+      fromJSON(needs.config.outputs.environment-count) >= 2
+    concurrency:
+      group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[1].name }}
+      cancel-in-progress: false
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+      stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[1]) }}
+      version: ${{ needs.release.outputs.deployed-version }}
+      release-type: ${{ needs.release.outputs.type }}
+    secrets: inherit
+
+  stage-3:
+    name: ${{ fromJSON(needs.config.outputs.config).environments[2].name || 'Stage 3' }}
+    needs: [config, release, stage-2]
+    if: >-
+      !cancelled() &&
+      needs.stage-2.result == 'success' &&
+      fromJSON(needs.config.outputs.environment-count) >= 3
+    concurrency:
+      group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[2].name }}
+      cancel-in-progress: false
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+      stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[2]) }}
+      version: ${{ needs.release.outputs.deployed-version }}
+      release-type: ${{ needs.release.outputs.type }}
+    secrets: inherit
+
+  stage-4:
+    name: ${{ fromJSON(needs.config.outputs.config).environments[3].name || 'Stage 4' }}
+    needs: [config, release, stage-3]
+    if: >-
+      !cancelled() &&
+      needs.stage-3.result == 'success' &&
+      fromJSON(needs.config.outputs.environment-count) >= 4
+    concurrency:
+      group: pipeline-deploy-${{ github.repository }}-${{ fromJSON(needs.config.outputs.config).environments[3].name }}
+      cancel-in-progress: false
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+      stage: ${{ toJSON(fromJSON(needs.config.outputs.config).environments[3]) }}
+      version: ${{ needs.release.outputs.deployed-version }}
+      release-type: ${{ needs.release.outputs.type }}
+    secrets: inherit
+
+  notify-failure:
+    name: Notify failure
+    needs: [config, quality, release, stage-1, stage-2, stage-3, stage-4]
+    if: >-
+      always() &&
+      needs.config.result == 'success' &&
+      contains(needs.*.result, 'failure') &&
+      contains(fromJSON(needs.config.outputs.config).notifications.notify-on, 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      HAS_NOTIFICATIONS_ROLE: ${{ secrets.NOTIFICATIONS_ROLE != '' }}
+    steps:
+      - name: Find failed stage
+        id: failed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          CONFIG: ${{ needs.config.outputs.config }}
+        run: |
+          # The first failed job, named by environment where it is a stage.
+          FAILED=$(jq -rn --argjson needs "${RESULTS}" --argjson config "${CONFIG}" '
+            ["quality", "release", "stage-1", "stage-2", "stage-3", "stage-4"]
+            | map(select($needs[.].result == "failure"))
+            | first // "pipeline"
+            | if startswith("stage-") then $config.environments[(ltrimstr("stage-") | tonumber) - 1].name else . end
+          ')
+          echo "Failed at: ${FAILED}"
+          echo "environment=${FAILED}" >> "$GITHUB_OUTPUT"
+
+      - name: Check notifications role
+        if: env.HAS_NOTIFICATIONS_ROLE != 'true'
+        run: echo "::warning::NOTIFICATIONS_ROLE secret is not set; skipping failure notification."
+
+      - name: Configure AWS credentials
+        if: env.HAS_NOTIFICATIONS_ROLE == 'true'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.NOTIFICATIONS_ROLE }}
+          aws-region: ${{ fromJSON(needs.config.outputs.config).aws.region }}
+          role-session-name: notify-${{ github.run_id }}
+
+      - name: Notify failure
+        if: env.HAS_NOTIFICATIONS_ROLE == 'true'
+        uses: govuk-once/platform-shared-ci-cd/actions/notify-deployment@v1
+        with:
+          application: ${{ fromJSON(needs.config.outputs.config).application }}
+          environment: ${{ steps.failed.outputs.environment }}
+          version: ${{ needs.release.outputs.deployed-version }}
+          status: failure
+          topic-arn: ${{ fromJSON(needs.config.outputs.config).notifications.topic-arn }}
+          topic-arn-ssm-parameter: ${{ fromJSON(needs.config.outputs.config).notifications.topic-arn-ssm-parameter }}

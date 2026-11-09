@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Stub `python3 -m pip ...`; anything else goes to the real interpreter.
+if [ "$1" = "-m" ] && [ "$2" = "pip" ]; then
+  source "$(dirname "$0")/_log"
+  exit 0
+fi
+exec /usr/bin/python3 "$@"

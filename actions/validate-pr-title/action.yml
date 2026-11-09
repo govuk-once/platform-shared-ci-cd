@@ -1,0 +1,136 @@
+name: Validate PR title
+description: >-
+  Checks the pull request title against a regular expression (for example a
+  Jira reference followed by a Conventional Commit type) and optionally keeps a
+  single guidance comment on the PR up to date.
+
+inputs:
+  pattern:
+    description: >-
+      Extended regular expression (grep -E) the PR title must match. The default
+      requires `<JIRA-REF> <type>(<scope>)?: <description>`.
+    required: false
+    default: '^[A-Z]+-[0-9]+ (feat|fix|chore|docs|style|refactor|test|perf|ci|build|revert)(\([^)]+\))?!?: .+'
+  format:
+    description: Human-readable format shown when the title is invalid.
+    required: false
+    default: "<JIRA-REF> <type>(<scope>)?: <description>"
+  examples:
+    description: Example valid titles, one per line, shown in the PR comment.
+    required: false
+    default: |
+      ABC-123 feat: add user preferences endpoint
+      ABC-456 fix(api): handle empty payload
+      ABC-789 feat!: drop legacy auth
+  guidance-url:
+    description: Optional link to further guidance, included in the PR comment.
+    required: false
+    default: ""
+  skip-actors:
+    description: Space-separated GitHub actors whose PRs are not checked.
+    required: false
+    default: "dependabot[bot]"
+  post-comment:
+    description: >-
+      Create or update a guidance comment on the PR ("true"/"false"). Requires
+      `pull-requests: write`.
+    required: false
+    default: "false"
+  github-token:
+    description: Token used to post the PR comment.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  valid:
+    description: "`true` when the title is valid or the check was skipped; otherwise `false`."
+    value: ${{ steps.validate.outputs.valid }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate PR title
+      id: validate
+      shell: bash
+      env:
+        TITLE: ${{ github.event.pull_request.title }}
+        PATTERN: ${{ inputs.pattern }}
+        ACTOR: ${{ github.actor }}
+        SKIP_ACTORS: ${{ inputs.skip-actors }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        if [[ "${EVENT_NAME}" != pull_request* ]]; then
+          echo "::notice::Not a pull request event (${EVENT_NAME}); skipping PR title check."
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          echo "skipped=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        for skip in ${SKIP_ACTORS}; do
+          if [ "${ACTOR}" = "${skip}" ]; then
+            echo "Skipping PR title check for ${ACTOR}"
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        done
+
+        echo "Checking PR title: ${TITLE}"
+        if printf '%s' "${TITLE}" | grep -Eq -- "${PATTERN}"; then
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "valid=false" >> "$GITHUB_OUTPUT"
+        fi
+        echo "skipped=false" >> "$GITHUB_OUTPUT"
+
+    - name: Update PR title guidance comment
+      if: inputs.post-comment == 'true' && steps.validate.outputs.skipped != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        VALID: ${{ steps.validate.outputs.valid }}
+        FORMAT: ${{ inputs.format }}
+        EXAMPLES: ${{ inputs.examples }}
+        GUIDANCE_URL: ${{ inputs.guidance-url }}
+      run: |
+        MARKER="<!-- pr-title-check -->"
+        BODY_FILE="${RUNNER_TEMP}/pr-title-comment.md"
+
+        if [ "${VALID}" = "true" ]; then
+          printf '%s\n### ✅ Valid PR title\n\nThanks, this PR title follows the required format.\n' "${MARKER}" > "${BODY_FILE}"
+        else
+          {
+            printf '%s\n### ❌ Invalid PR title\n\n' "${MARKER}"
+            printf 'The PR title is used as the squash-merge commit message and drives semantic versioning, so it must follow this format:\n\n'
+            printf '```txt\n%s\n```\n\n' "${FORMAT}"
+            if [ -n "${EXAMPLES}" ]; then
+              printf '**Examples**\n\n```txt\n%s\n```\n\n' "${EXAMPLES%$'\n'}"
+            fi
+            if [ -n "${GUIDANCE_URL}" ]; then
+              printf 'See [the guidance](%s) for more detail.\n' "${GUIDANCE_URL}"
+            fi
+          } > "${BODY_FILE}"
+        fi
+
+        # Keep a single comment carrying the marker.
+        COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+          --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n1)
+
+        if [ -n "${COMMENT_ID}" ]; then
+          echo "Updating existing comment ${COMMENT_ID}"
+          gh api -X PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" -F body=@"${BODY_FILE}" > /dev/null
+        elif [ "${VALID}" != "true" ]; then
+          echo "Creating guidance comment"
+          gh api -X POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -F body=@"${BODY_FILE}" > /dev/null
+        fi
+
+    - name: Fail if PR title is invalid
+      if: steps.validate.outputs.valid != 'true'
+      shell: bash
+      env:
+        FORMAT: ${{ inputs.format }}
+      run: |
+        echo "::error::PR title must follow the format '${FORMAT}'"
+        exit 1

@@ -47,57 +47,10 @@ jobs:
           aws-region: ${{ inputs.aws-region }}
           role-session-name: release-notification-${{ github.run_id }}
 
-      - name: Get AWS account ID
-        id: aws-account
-        run: |
-          echo "account-id=$(aws sts get-caller-identity --query Account --output text)" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare release notification
-        env:
-          GH_TOKEN: ${{ github.token }}
-          APPLICATION: ${{ inputs.application }}
-          VERSION: ${{ inputs.version }}
-          RELEASE_TYPE: ${{ inputs.type }}
-          REPOSITORY: ${{ github.repository }}
-          SERVER_URL: ${{ github.server_url }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          RELEASE_TAG="v${VERSION}"
-          RELEASE_URL="${SERVER_URL}/${REPOSITORY}/releases/tag/${RELEASE_TAG}"
-          RUN_URL="${SERVER_URL}/${REPOSITORY}/actions/runs/${RUN_ID}"
-
-          RELEASE_NOTES=$(gh release view "$RELEASE_TAG" \
-          --repo "$REPOSITORY" \
-          --json body \
-          --jq '.body // "No release notes were provided."')
-
-          TITLE="${APPLICATION} ${RELEASE_TYPE} release: ${RELEASE_TAG}"
-
-          DESCRIPTION=$(printf \
-          '*%s* has been successfully deployed to production.\n\n%s\n\n<%s|View GitHub release> · <%s|View deployment>' \
-          "$APPLICATION" \
-          "$RELEASE_NOTES" \
-          "$RELEASE_URL" \
-          "$RUN_URL")
-
-          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          echo "TITLE=$TITLE" >> "$GITHUB_ENV"
-
-          delimiter="NOTIFICATION_$(openssl rand -hex 16)"
-
-          {
-          printf 'DESCRIPTION<<%s\n' "$delimiter"
-          printf '%s\n' "$DESCRIPTION"
-          printf '%s\n' "$delimiter"
-          } >> "$GITHUB_ENV"
-
-      - name: Send Notification
-        uses: govuk-once/govuk-platform-notifications-gh-action@4807ffbe31b48e3ecc3e8ea66f058068f453fa3a
+      - name: Send release notification
+        uses: govuk-once/platform-shared-ci-cd/actions/release-notification@v1
         with:
-          aws_account_id: ${{ steps.aws-account.outputs.account-id }}
-          message_type: release
-          title: ${{ env.TITLE }}
-          message: ${{ env.DESCRIPTION }}
-          repository: ${{ github.repository }}
-          tag: ${{ env.RELEASE_TAG }}
-          slack_channel: ${{ inputs.slack-channel }}
+          application: ${{ inputs.application }}
+          version: ${{ inputs.version }}
+          type: ${{ inputs.type }}
+          slack-channel: ${{ inputs.slack-channel }}

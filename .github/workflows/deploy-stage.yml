@@ -1,0 +1,178 @@
+name: Deploy Stage
+
+# One pipeline stage in a single job, run in the stage's GitHub environment:
+# AWS credentials (environment secret DEPLOYMENT_ROLE) -> setup -> pre-deploy hooks
+# -> deploy (or destroy) -> post-deploy hooks -> notifications.
+#
+# Called by pr-pipeline.yml, pr-cleanup.yml and release-pipeline.yml with
+# `secrets: inherit`. Secrets are deliberately not declared under workflow_call
+# so DEPLOYMENT_ROLE resolves from the job's environment.
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        description: Normalised pipeline config JSON (load-pipeline-config output).
+        required: true
+        type: string
+      stage:
+        description: The stage object from the config, as JSON.
+        required: true
+        type: string
+      mode:
+        description: "`deploy` or `destroy`."
+        required: false
+        type: string
+        default: deploy
+      version:
+        description: Version being deployed (without `v`). Empty to keep package.json.
+        required: false
+        type: string
+        default: ""
+      release-type:
+        description: Semantic release type (major, minor, patch) for release notifications.
+        required: false
+        type: string
+        default: ""
+      ref:
+        description: Git ref to check out. Defaults to the triggering ref.
+        required: false
+        type: string
+        default: ""
+    outputs:
+      stack-outputs:
+        description: JSON object of the stage's outputs-stack outputs.
+        value: ${{ jobs.stage.outputs.stack-outputs }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  stage:
+    name: ${{ inputs.mode == 'destroy' && 'Destroy' || 'Deploy' }} ${{ fromJSON(inputs.stage).name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJSON(inputs.stage).timeout-minutes }}
+    environment: ${{ fromJSON(inputs.stage).environment }}
+    outputs:
+      stack-outputs: ${{ steps.deploy.outputs.stack-outputs }}
+    env:
+      PIPELINE_ENV: ${{ fromJSON(inputs.stage).name }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HAS_NOTIFICATIONS_ROLE: ${{ secrets.NOTIFICATIONS_ROLE != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Export stage environment
+        env:
+          STAGE: ${{ inputs.stage }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          echo "VERSION=${INPUT_VERSION}" >> "$GITHUB_ENV"
+          # {version} is the one placeholder only known at deploy time.
+          while IFS= read -r entry; do
+            [ -z "${entry}" ] && continue
+            echo "Exporting ${entry%%=*}"
+            echo "${entry//\{version\}/${INPUT_VERSION}}" >> "$GITHUB_ENV"
+          done < <(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' <<< "${STAGE}")
+
+      - name: Check deployment role
+        env:
+          DEPLOYMENT_ROLE: ${{ secrets.DEPLOYMENT_ROLE }}
+          ENVIRONMENT: ${{ fromJSON(inputs.stage).environment }}
+        run: |
+          if [ -z "${DEPLOYMENT_ROLE}" ]; then
+            echo "::error title=Missing DEPLOYMENT_ROLE::Add a DEPLOYMENT_ROLE secret to the '${ENVIRONMENT}' GitHub environment and call the pipeline with 'secrets: inherit'."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          aws-region: ${{ fromJSON(inputs.config).aws.region }}
+          role-session-name: ${{ inputs.mode }}-${{ github.run_id }}
+
+      - name: Setup Node.js and pnpm
+        uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
+        with:
+          node-version: ${{ fromJSON(inputs.config).node.version }}
+          codeartifact-role: ${{ fromJSON(inputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
+
+      - name: Pre-deploy hooks
+        if: inputs.mode == 'deploy'
+        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@v1
+        with:
+          label: pre-deploy
+          hooks: ${{ toJSON(fromJSON(inputs.stage).pre-deploy) }}
+
+      - name: ${{ inputs.mode == 'destroy' && 'Destroy' || 'Deploy' }}
+        id: deploy
+        uses: govuk-once/platform-shared-ci-cd/actions/cdk-deploy@v1
+        with:
+          command: ${{ inputs.mode == 'destroy' && fromJSON(inputs.stage).destroy || fromJSON(inputs.stage).deploy }}
+          working-directory: ${{ fromJSON(inputs.stage).working-directory }}
+          version: ${{ inputs.mode == 'deploy' && inputs.version || '' }}
+          prerelease-tag: ${{ fromJSON(inputs.stage).prerelease-tag }}
+          outputs-stack: ${{ inputs.mode == 'deploy' && fromJSON(inputs.stage).outputs-stack || '' }}
+
+      - name: Export deploy results
+        if: inputs.mode == 'deploy'
+        env:
+          STACK_OUTPUTS: ${{ steps.deploy.outputs.stack-outputs }}
+          DEPLOYED_VERSION: ${{ steps.deploy.outputs.version }}
+        run: |
+          echo "STACK_OUTPUTS=${STACK_OUTPUTS}" >> "$GITHUB_ENV"
+          if [ -n "${DEPLOYED_VERSION}" ]; then
+            echo "VERSION=${DEPLOYED_VERSION}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Post-deploy hooks
+        if: inputs.mode == 'deploy'
+        uses: govuk-once/platform-shared-ci-cd/actions/run-hooks@v1
+        with:
+          label: post-deploy
+          hooks: ${{ toJSON(fromJSON(inputs.stage).post-deploy) }}
+
+      # !(x == null) rather than x != null: act treats a JSON null as != null.
+      - name: Send release notification
+        if: >-
+          inputs.mode == 'deploy' &&
+          !(fromJSON(inputs.stage).release-notification == null) &&
+          (inputs.release-type == 'major' || inputs.release-type == 'minor')
+        uses: govuk-once/platform-shared-ci-cd/actions/release-notification@v1
+        with:
+          application: ${{ fromJSON(inputs.config).application }}
+          version: ${{ inputs.version }}
+          type: ${{ inputs.release-type }}
+          slack-channel: ${{ fromJSON(inputs.stage).release-notification.slack-channel }}
+
+      # The notifications topic may live in another account (e.g. dev), so use
+      # the repository-level NOTIFICATIONS_ROLE when one is configured.
+      - name: Configure AWS credentials for notifications
+        if: >-
+          inputs.mode == 'deploy' &&
+          contains(fromJSON(inputs.config).notifications.notify-on, 'success') &&
+          env.HAS_NOTIFICATIONS_ROLE == 'true'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.NOTIFICATIONS_ROLE }}
+          aws-region: ${{ fromJSON(inputs.config).aws.region }}
+          role-session-name: notify-${{ github.run_id }}
+
+      - name: Notify deployment
+        if: inputs.mode == 'deploy' && contains(fromJSON(inputs.config).notifications.notify-on, 'success')
+        uses: govuk-once/platform-shared-ci-cd/actions/notify-deployment@v1
+        with:
+          application: ${{ fromJSON(inputs.config).application }}
+          environment: ${{ fromJSON(inputs.stage).name }}
+          version: ${{ steps.deploy.outputs.version || inputs.version }}
+          topic-arn: ${{ fromJSON(inputs.config).notifications.topic-arn }}
+          topic-arn-ssm-parameter: ${{ fromJSON(inputs.config).notifications.topic-arn-ssm-parameter }}

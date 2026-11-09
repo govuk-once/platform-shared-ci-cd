@@ -1,0 +1,12 @@
+# Stand-in for flex's own zap.yml, which the example's release.yml calls but
+# which is not part of this repository.
+name: ZAP security scan (stub)
+
+on:
+  workflow_call:
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "[stub] ZAP scan against staging"

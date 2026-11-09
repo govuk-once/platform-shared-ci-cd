@@ -1,0 +1,57 @@
+name: PR Cleanup
+
+# Destroys the ephemeral environment when a pull request closes, using
+# pr.ephemeral.destroy from the caller's .github/pipeline.yml.
+#
+# Call from a workflow triggered by `pull_request: types: [closed]` with
+# `secrets: inherit`.
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to the pipeline config in the calling repository.
+        required: false
+        type: string
+        default: ".github/pipeline.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  config:
+    name: Load pipeline config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      config: ${{ steps.load.outputs.config }}
+      has-destroy: ${{ steps.load.outputs.has-destroy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: ${{ inputs.config-path }}
+          sparse-checkout-cone-mode: false
+
+      - name: Load pipeline config
+        id: load
+        uses: govuk-once/platform-shared-ci-cd/actions/load-pipeline-config@v1
+        with:
+          path: ${{ inputs.config-path }}
+
+  destroy:
+    name: Destroy ephemeral environment
+    needs: config
+    if: needs.config.outputs.has-destroy == 'true'
+    # Shared with pr-pipeline.yml so a destroy never overlaps a deploy.
+    concurrency:
+      group: pipeline-ephemeral-${{ github.repository }}-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    uses: govuk-once/platform-shared-ci-cd/.github/workflows/deploy-stage.yml@v1
+    with:
+      config: ${{ needs.config.outputs.config }}
+      stage: ${{ toJSON(fromJSON(needs.config.outputs.config).pr.ephemeral) }}
+      mode: destroy
+    secrets: inherit

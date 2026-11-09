@@ -1,0 +1,336 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/govuk-once/platform-shared-ci-cd/v1/schema/pipeline.schema.json",
+  "title": "Shared pipeline config",
+  "description": "Configuration for the govuk-once/platform-shared-ci-cd PR, cleanup and release pipelines. Commit as .github/pipeline.yml.",
+  "markdownDescription": "Configuration for the `govuk-once/platform-shared-ci-cd` PR, cleanup and release pipelines. Commit as `.github/pipeline.yml`.\n\n[Config reference](https://github.com/govuk-once/platform-shared-ci-cd/blob/main/docs/pipelines.md#config-reference)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["application"],
+  "defaultSnippets": [
+    {
+      "label": "Minimal pipeline",
+      "description": "Application name and one environment.",
+      "body": {
+        "application": "${1:MyService}",
+        "environments": [{ "name": "${2:dev}", "deploy": "${3:pnpm run cdk:deploy:dev}" }]
+      }
+    }
+  ],
+  "properties": {
+    "application": {
+      "type": "string",
+      "description": "Human-readable service name used in notifications, e.g. UDP.",
+      "examples": ["UDP", "Flex"]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Node.js and package installation settings.",
+      "properties": {
+        "version": {
+          "type": ["string", "number"],
+          "description": "Node.js version. Defaults to .nvmrc, then 24.",
+          "examples": [24, "22.11.0"]
+        },
+        "codeartifact": {
+          "type": "boolean",
+          "default": false,
+          "description": "Configure CodeArtifact auth before every pnpm install, assuming the environment's DEPLOYMENT_ROLE via OIDC.",
+          "markdownDescription": "Configure CodeArtifact auth (writes `.npmrc`) before every `pnpm install`.\n\nAssumes the `DEPLOYMENT_ROLE` secret of the job's GitHub environment via OIDC, so that role must be allowed to read from CodeArtifact."
+        }
+      }
+    },
+    "aws": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "AWS settings shared by every job.",
+      "properties": {
+        "region": {
+          "type": "string",
+          "default": "eu-west-2",
+          "description": "Region for AWS credentials.",
+          "examples": ["eu-west-2"]
+        }
+      }
+    },
+    "pr": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Settings for pr-pipeline.yml and pr-cleanup.yml.",
+      "properties": {
+        "title": {
+          "description": "PR title check. Set to false to disable.",
+          "oneOf": [
+            { "const": false, "description": "Disable the PR title check." },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "PR title check settings.",
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Extended regular expression the title must match.",
+                  "examples": ["^[A-Z]{3,4}-[1-9][0-9]{0,4}: .+"]
+                },
+                "format": {
+                  "type": "string",
+                  "description": "Human-readable format shown on failure.",
+                  "examples": ["UDP-123: Description"]
+                },
+                "examples": {
+                  "type": "string",
+                  "description": "Example titles, one per line, shown on failure.",
+                  "examples": ["UDP-123: Add consent endpoint"]
+                },
+                "guidance-url": {
+                  "type": "string",
+                  "description": "Link to title guidance, shown on failure."
+                },
+                "skip-actors": {
+                  "type": "string",
+                  "default": "dependabot[bot]",
+                  "description": "Comma-separated actors whose PRs skip the title check."
+                },
+                "comment": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Maintain a guidance comment on the PR."
+                }
+              }
+            }
+          ]
+        },
+        "ephemeral": {
+          "$ref": "#/$defs/stage",
+          "description": "Per-PR environment, deployed on every PR push and destroyed when the PR closes. name defaults to 'ephemeral'.",
+          "markdownDescription": "Per-PR environment, deployed on every PR push and destroyed by `pr-cleanup.yml` when the PR closes.\n\n`name` defaults to `ephemeral`. Use `{pr}` in `env` to keep stacks per PR, e.g. `DEVELOPER_ID: \"pr-{pr}\"`.",
+          "defaultSnippets": [
+            {
+              "label": "Ephemeral environment",
+              "body": {
+                "environment": "${1:ephemeral}",
+                "env": { "DEVELOPER_ID": "pr-{pr}" },
+                "deploy": "${2:pnpm run cdk:deploy:dev}",
+                "destroy": "${3:pnpm run cdk:destroy:dev}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Quality checks run on PRs and before each release.",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "description": "GitHub environment whose DEPLOYMENT_ROLE quality jobs assume. Defaults to the ephemeral environment when AWS credentials are needed."
+        },
+        "aws": {
+          "type": "boolean",
+          "default": false,
+          "description": "Configure AWS credentials in the checks job, e.g. for cdk synth."
+        },
+        "nx": {
+          "type": "boolean",
+          "default": false,
+          "description": "Set NX_BASE/NX_HEAD for `nx affected` commands."
+        },
+        "setup": {
+          "type": "string",
+          "description": "Command run once before checks, e.g. installing Python tooling.",
+          "examples": ["python3 -m pip install semgrep pre-commit checkov"]
+        },
+        "checks": { "$ref": "#/$defs/hooks", "description": "Commands run in order in the checks job." },
+        "dependency-review": {
+          "type": "boolean",
+          "default": false,
+          "description": "Fail PRs that add dependencies with high-severity vulnerabilities."
+        },
+        "conventional-commits": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require at least one Conventional Commit in the PR."
+        },
+        "sonar": {
+          "description": "SonarQube scan (SONAR_TOKEN and SONAR_URL secrets).",
+          "markdownDescription": "SonarQube scan with quality-gate wait. Needs the `SONAR_TOKEN` and `SONAR_URL` secrets.\n\n`true`, or `{test, args}` to produce coverage first.",
+          "oneOf": [
+            { "type": "boolean", "description": "Enable or disable the scan." },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "SonarQube scan settings.",
+              "properties": {
+                "test": {
+                  "type": "string",
+                  "description": "Command run before the scan to produce coverage.",
+                  "examples": ["pnpm test:all"]
+                },
+                "args": { "type": "string", "description": "Extra scanner arguments." }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "semantic-release settings for release-pipeline.yml.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run semantic-release before promoting. When false, the short commit SHA is the version."
+        }
+      }
+    },
+    "environments": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "Environments promoted in order on each push to main (at most four).",
+      "items": {
+        "$ref": "#/$defs/stage",
+        "required": ["name", "deploy"],
+        "defaultSnippets": [
+          {
+            "label": "Environment",
+            "body": { "name": "${1:dev}", "deploy": "${2:pnpm run cdk:deploy:dev}" }
+          }
+        ]
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "AWS Chatbot deployment notifications.",
+      "properties": {
+        "topic-arn": {
+          "type": "string",
+          "description": "AWS Chatbot SNS topic ARN.",
+          "examples": ["arn:aws:sns:eu-west-2:123456789012:deployments"]
+        },
+        "topic-arn-ssm-parameter": {
+          "type": "string",
+          "description": "SSM parameter holding the AWS Chatbot SNS topic ARN. Use instead of topic-arn."
+        },
+        "notify-on": {
+          "type": "array",
+          "items": { "enum": ["success", "failure"] },
+          "description": "Defaults to [failure] when a topic is set.",
+          "markdownDescription": "Defaults to `[failure]` when a topic is set.\n\n- `success`: posts after each environment deploys.\n- `failure`: posts once if the release pipeline fails, naming the stage."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hooks": {
+      "title": "Hook list",
+      "type": "array",
+      "description": "Commands run in order. Each item is a command string or {name, run}.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "description": "Command, run with bash -euo pipefail." },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "description": "Named command.",
+            "properties": {
+              "name": { "type": "string", "description": "Step name shown in the job log." },
+              "run": {
+                "type": "string",
+                "description": "Command, run with bash -euo pipefail from the repository root.",
+                "examples": ["./scripts/ci/e2e.sh"]
+              }
+            }
+          }
+        ],
+        "defaultSnippets": [
+          { "label": "Named hook", "body": { "name": "${1:E2E tests}", "run": "${2:./scripts/ci/e2e.sh}" } }
+        ]
+      }
+    },
+    "stage": {
+      "title": "Stage",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deploy"],
+      "description": "One deployment stage, run as a single job in its GitHub environment.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Shown in job names and exported as PIPELINE_ENV. Required for environments[].",
+          "examples": ["dev", "staging", "production"]
+        },
+        "environment": {
+          "type": "string",
+          "description": "GitHub environment holding DEPLOYMENT_ROLE. Defaults to name.",
+          "markdownDescription": "GitHub environment the job runs in. Its `DEPLOYMENT_ROLE` secret and protection rules apply. Defaults to `name`."
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for all commands. Placeholders: {pr}, {sha}, {env}, {version}.",
+          "markdownDescription": "`NAME: value` exported to every command.\n\nPlaceholders: `{pr}` PR number, `{sha}` commit SHA, `{env}` stage name, `{version}` version deployed.",
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "working-directory": {
+          "type": "string",
+          "default": ".",
+          "description": "Where deploy/destroy run and the version is stamped. Hooks always run from the repository root."
+        },
+        "deploy": {
+          "type": "string",
+          "description": "Deploy command.",
+          "examples": ["pnpm run cdk:deploy:dev"]
+        },
+        "destroy": {
+          "type": "string",
+          "description": "Destroy command (pr.ephemeral only), run by pr-cleanup.yml.",
+          "examples": ["pnpm run cdk:destroy:dev"]
+        },
+        "pre-deploy": { "$ref": "#/$defs/hooks", "description": "Run before deploy, in order." },
+        "post-deploy": {
+          "$ref": "#/$defs/hooks",
+          "description": "Run after deploy, e.g. e2e tests. A failure stops promotion.",
+          "markdownDescription": "Run after deploy, e.g. e2e tests. A failure stops promotion.\n\nHooks see `STACK_OUTPUTS` when `outputs-stack` is set."
+        },
+        "prerelease-tag": {
+          "type": "string",
+          "description": "Deploy as <version>-<tag>.<short-sha>.",
+          "markdownDescription": "Stamp `package.json` as `<version>-<tag>.<short-sha>`, e.g. `1.4.0-rc.abc1234`.",
+          "examples": ["rc"]
+        },
+        "outputs-stack": {
+          "type": "string",
+          "description": "CloudFormation stack whose outputs are exported as STACK_OUTPUTS.",
+          "markdownDescription": "CloudFormation stack whose outputs are exported to post-deploy hooks as `STACK_OUTPUTS` JSON, e.g. `jq -r .ApiUrl <<< \"$STACK_OUTPUTS\"`.",
+          "examples": ["dev-e2e"]
+        },
+        "release-notification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slack-channel"],
+          "description": "Send the Slack release notification for major/minor releases after this stage.",
+          "properties": {
+            "slack-channel": {
+              "type": "string",
+              "description": "Slack channel for the release notification.",
+              "examples": ["#udp-releases"]
+            }
+          }
+        },
+        "timeout-minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Job timeout, including hooks."
+        }
+      }
+    }
+  }
+}
