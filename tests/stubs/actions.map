@@ -11,3 +11,4 @@ actions/setup-node                                   setup-node
 actions/cache                                        cache
 actions/create-github-app-token                      github-app-token
 govuk-once/govuk-platform-notifications-gh-action    platform-notifications
+govuk-once/platform-actions-codeartifact-login       codeartifact-auth

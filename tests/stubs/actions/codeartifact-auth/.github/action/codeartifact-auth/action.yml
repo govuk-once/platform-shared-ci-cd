@@ -1,0 +1,16 @@
+name: "Stub: govuk-once/platform-actions-codeartifact-login codeartifact-auth"
+description: Local act stand-in for the CodeArtifact auth action. Logs its inputs and does nothing else.
+inputs:
+  role-to-assume: { required: true }
+  codeartifact-domain: { required: false }
+  codeartifact-repository: { required: false }
+  codeartifact-domain-owner: { required: false }
+  aws-region: { required: false }
+outputs:
+  registry-url: { value: "https://codeartifact.invalid/npm/stub/" }
+  auth-token: { value: "stub" }
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "[stub] codeartifact-auth role=${{ inputs.role-to-assume }} domain=${{ inputs.codeartifact-domain }} owner=${{ inputs.codeartifact-domain-owner }}"

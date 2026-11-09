@@ -103,7 +103,7 @@ jobs:
         uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
         with:
           node-version: ${{ fromJSON(inputs.config).node.version }}
-          codeartifact-account: ${{ fromJSON(inputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
+          codeartifact-role: ${{ fromJSON(inputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
 
       - name: Pre-deploy hooks
         if: inputs.mode == 'deploy'

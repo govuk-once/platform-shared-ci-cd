@@ -33,7 +33,29 @@ Each environment runs as a single job, so hooks share the deploy's credentials, 
 
 ## Config reference
 
-Add `# yaml-language-server: $schema=<path or URL to schema/pipeline.schema.json>` at the top for editor autocomplete. The pipeline validates the file on every run and reports the exact key at fault, e.g. `environments[1].deploy: is required`.
+The pipeline validates the file on every run and reports the exact key at fault, e.g. `environments[1].deploy: is required`.
+
+### Editor support
+
+[`schema/pipeline.schema.json`](../schema/pipeline.schema.json) gives autocomplete, hover documentation, snippets and inline errors while you write the file. Make this the first line of `.github/pipeline.yml`:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/govuk-once/platform-shared-ci-cd/v1/schema/pipeline.schema.json
+```
+
+The URL follows the `@v1` tag your caller workflows use, so the schema matches the pipeline version you run.
+
+- **VS Code:** install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) (`redhat.vscode-yaml`). To skip the comment, map the file in `.vscode/settings.json` instead:
+
+  ```json
+  {
+    "yaml.schemas": {
+      "https://raw.githubusercontent.com/govuk-once/platform-shared-ci-cd/v1/schema/pipeline.schema.json": ".github/pipeline.yml"
+    }
+  }
+  ```
+
+- **JetBrains IDEs:** the comment works as is. Alternatively, add a mapping under Settings → Languages & Frameworks → Schemas and DTDs → JSON Schema Mappings.
 
 ### Top level
 
@@ -41,7 +63,7 @@ Add `# yaml-language-server: $schema=<path or URL to schema/pipeline.schema.json
 | ------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `application`       | (required)          | Service name used in notifications.                                                                                                      |
 | `node.version`      | `.nvmrc`, then `24` | Node.js version.                                                                                                                         |
-| `node.codeartifact` | `false`             | Log in to CodeArtifact before installing. Every job that installs then needs AWS credentials (see [Secrets](#secrets-and-environments)). |
+| `node.codeartifact` | `false`             | Configure CodeArtifact auth before installing, assuming the environment's `DEPLOYMENT_ROLE` (see [Secrets](#secrets-and-environments)). |
 | `aws.region`        | `eu-west-2`         | Region for credentials.                                                                                                                  |
 | `release.enabled`   | `true`              | Run semantic-release. When `false`, the short commit SHA is the version.                                                                 |
 
@@ -105,7 +127,6 @@ Callers pass `secrets: inherit`. The pipelines expect these names:
 | Secret                            | Scope                                                                        | Needed for                                                                                                                                                                   |
 | --------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DEPLOYMENT_ROLE`                 | **Each GitHub environment** (`ephemeral`, `dev`, `staging`, `production`, …) | Deploying that stage, and quality/release jobs when AWS is needed.                                                                                                           |
-| `CODEARTIFACT_ACCOUNT`            | Repository or organisation                                                   | `node.codeartifact: true`.                                                                                                                                                   |
 | `SONAR_TOKEN`, `SONAR_URL`        | Repository or organisation                                                   | `quality.sonar`.                                                                                                                                                             |
 | `NOTIFICATIONS_ROLE`              | Repository                                                                   | Publishing deployment notifications (e.g. a dev-account topic). Without it, success notifications use the stage's role and failure notifications are skipped with a warning. |
 | `GH_APP_ID`, `GH_APP_PRIVATE_KEY` | Repository                                                                   | Optional. semantic-release uses a GitHub App token, e.g. when branch protection blocks `github.token`.                                                                       |

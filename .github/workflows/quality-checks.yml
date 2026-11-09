@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 60
     environment: ${{ fromJSON(inputs.config).quality.environment }}
     env:
-      NEEDS_AWS: ${{ fromJSON(inputs.config).quality.aws || fromJSON(inputs.config).node.codeartifact }}
+      NEEDS_AWS: ${{ fromJSON(inputs.config).quality.aws }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,7 +49,7 @@ jobs:
         uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
         with:
           node-version: ${{ fromJSON(inputs.config).node.version }}
-          codeartifact-account: ${{ fromJSON(inputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
+          codeartifact-role: ${{ fromJSON(inputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
 
       - name: Set Nx base and head SHAs
         if: fromJSON(inputs.config).quality.nx
@@ -131,19 +131,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Configure AWS credentials
-        if: fromJSON(inputs.config).node.codeartifact
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
-        with:
-          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
-          aws-region: ${{ fromJSON(inputs.config).aws.region }}
-          role-session-name: sonar-${{ github.run_id }}
-
       - name: Setup Node.js and pnpm
         uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
         with:
           node-version: ${{ fromJSON(inputs.config).node.version }}
-          codeartifact-account: ${{ fromJSON(inputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
+          codeartifact-role: ${{ fromJSON(inputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
 
       - name: SonarQube scan
         uses: govuk-once/platform-shared-ci-cd/actions/sonar-scan@v1

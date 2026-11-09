@@ -68,7 +68,7 @@ jobs:
     needs: [config, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # CodeArtifact installs need AWS credentials from an environment.
+    # CodeArtifact auth assumes the DEPLOYMENT_ROLE of an environment.
     environment: ${{ fromJSON(needs.config.outputs.config).node.codeartifact && fromJSON(needs.config.outputs.config).quality.environment || '' }}
     concurrency:
       group: ${{ github.repository }}-semantic-release
@@ -105,20 +105,12 @@ jobs:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
-      - name: Configure AWS credentials
-        if: env.ENABLED == 'true' && fromJSON(needs.config.outputs.config).node.codeartifact
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
-        with:
-          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
-          aws-region: ${{ fromJSON(needs.config.outputs.config).aws.region }}
-          role-session-name: release-${{ github.run_id }}
-
       - name: Setup Node.js and pnpm
         if: env.ENABLED == 'true'
         uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
         with:
           node-version: ${{ fromJSON(needs.config.outputs.config).node.version }}
-          codeartifact-account: ${{ fromJSON(needs.config.outputs.config).node.codeartifact && secrets.CODEARTIFACT_ACCOUNT || '' }}
+          codeartifact-role: ${{ fromJSON(needs.config.outputs.config).node.codeartifact && secrets.DEPLOYMENT_ROLE || '' }}
 
       - name: Run semantic-release
         id: release

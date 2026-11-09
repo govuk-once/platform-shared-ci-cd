@@ -69,7 +69,7 @@ while read -r repo stub; do
   case "${repo}" in ''|\#*) continue ;; esac
   while read -r ref; do
     REPO_ARGS+=(--local-repository "${repo}@${ref}=${STUBS}/actions/${stub}")
-  done < <(grep -rhoE "uses: ${repo}@[^ ]+" "${ROOT}/.github" "${ROOT}/actions" | sed 's/.*@//' | sort -u)
+  done < <(grep -rhoE "uses: ${repo}(/[^@ ]+)?@[^ ]+" "${ROOT}/.github" "${ROOT}/actions" | sed 's/.*@//' | sort -u)
 done < "${STUBS}/actions.map"
 
 # Put the stub CLIs first on PATH in every job, ahead of the image's own tools.

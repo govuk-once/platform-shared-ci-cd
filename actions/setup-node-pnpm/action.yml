@@ -1,7 +1,7 @@
 name: Setup Node.js and pnpm
 description: >-
   Installs pnpm (version from package.json `packageManager`), sets up Node.js,
-  optionally logs in to AWS CodeArtifact, and installs dependencies.
+  optionally configures AWS CodeArtifact auth, and installs dependencies.
 
 inputs:
   node-version:
@@ -30,11 +30,11 @@ inputs:
     description: Directory containing package.json and the lockfile.
     required: false
     default: "."
-  codeartifact-account:
+  codeartifact-role:
     description: >-
-      AWS account ID that owns the CodeArtifact domain. When set, runs
-      `aws codeartifact login` before installing. AWS credentials must already
-      be configured.
+      IAM role ARN to assume (via GitHub OIDC) for CodeArtifact. When set,
+      configures CodeArtifact auth in the workspace .npmrc before installing.
+      The job needs `id-token: write`.
     required: false
     default: ""
   codeartifact-domain:
@@ -45,10 +45,10 @@ inputs:
     description: CodeArtifact repository.
     required: false
     default: "registry-prod-repo"
-  codeartifact-namespace:
-    description: npm scope (without `@`) to route to CodeArtifact.
+  codeartifact-domain-owner:
+    description: AWS account ID that owns the CodeArtifact domain.
     required: false
-    default: "govuk-connect"
+    default: "904690835784"
   codeartifact-region:
     description: Region of the CodeArtifact domain.
     required: false
@@ -89,24 +89,15 @@ runs:
         cache: ${{ inputs.cache == 'true' && 'pnpm' || '' }}
         cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
 
-    - name: Authenticate to AWS CodeArtifact
-      if: inputs.codeartifact-account != ''
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      env:
-        CODEARTIFACT_ACCOUNT: ${{ inputs.codeartifact-account }}
-        CODEARTIFACT_DOMAIN: ${{ inputs.codeartifact-domain }}
-        CODEARTIFACT_REPOSITORY: ${{ inputs.codeartifact-repository }}
-        CODEARTIFACT_NAMESPACE: ${{ inputs.codeartifact-namespace }}
-        CODEARTIFACT_REGION: ${{ inputs.codeartifact-region }}
-      run: |
-        aws codeartifact login \
-          --tool npm \
-          --namespace "${CODEARTIFACT_NAMESPACE}" \
-          --repository "${CODEARTIFACT_REPOSITORY}" \
-          --domain "${CODEARTIFACT_DOMAIN}" \
-          --domain-owner "${CODEARTIFACT_ACCOUNT}" \
-          --region "${CODEARTIFACT_REGION}"
+    - name: Configure CodeArtifact auth
+      if: inputs.codeartifact-role != ''
+      uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@2efd2022d35cec2e48e4d99179b542e5144d831c
+      with:
+        role-to-assume: ${{ inputs.codeartifact-role }}
+        codeartifact-domain: ${{ inputs.codeartifact-domain }}
+        codeartifact-repository: ${{ inputs.codeartifact-repository }}
+        codeartifact-domain-owner: ${{ inputs.codeartifact-domain-owner }}
+        aws-region: ${{ inputs.codeartifact-region }}
 
     - name: Install dependencies
       if: inputs.install == 'true'
