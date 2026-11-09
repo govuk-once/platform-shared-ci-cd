@@ -1,0 +1,150 @@
+name: SonarQube Scan
+
+# Checks out the calling repository, installs dependencies, optionally runs the
+# test command to produce coverage, then runs a SonarQube scan and waits for
+# the Quality Gate. Project settings (project key, sources, coverage report
+# paths, exclusions) come from the caller's sonar-project.properties or `args`.
+
+on:
+  workflow_call:
+    inputs:
+      test-command:
+        description: Command run before the scan to generate coverage. Leave empty to skip.
+        required: false
+        type: string
+        default: ""
+      node-version:
+        description: Node.js version used to install dependencies and run tests.
+        required: false
+        type: string
+        default: "24"
+      install:
+        description: Install dependencies with `pnpm install --frozen-lockfile` before the scan.
+        required: false
+        type: boolean
+        default: true
+      codeartifact:
+        description: >-
+          Configure AWS CodeArtifact auth before installing dependencies. Requires
+          the `DEPLOYMENT_ROLE` secret.
+        required: false
+        type: boolean
+        default: false
+      environment:
+        description: >-
+          GitHub environment for the scan job, for callers whose secrets (such as
+          `DEPLOYMENT_ROLE`) are environment-scoped.
+        required: false
+        type: string
+        default: ""
+      wait-for-quality-gate:
+        description: Fail the job if the Quality Gate fails.
+        required: false
+        type: boolean
+        default: true
+      quality-gate-timeout:
+        description: Seconds to wait for the Quality Gate result.
+        required: false
+        type: number
+        default: 300
+      project-base-dir:
+        description: Directory to scan, relative to the repository root.
+        required: false
+        type: string
+        default: "."
+      args:
+        description: Additional scanner arguments, e.g. `-Dsonar.projectKey=my-project`.
+        required: false
+        type: string
+        default: ""
+
+    secrets:
+      SONAR_TOKEN:
+        required: true
+        description: SonarQube token with permission to analyse the project.
+      SONAR_URL:
+        required: true
+        description: SonarQube server URL.
+      DEPLOYMENT_ROLE:
+        required: false
+        description: IAM role ARN assumed via OIDC for CodeArtifact. Required when `codeartifact` is true.
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  scan:
+    name: SonarQube scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Check configuration
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_URL: ${{ secrets.SONAR_URL }}
+          DEPLOYMENT_ROLE: ${{ secrets.DEPLOYMENT_ROLE }}
+          CODEARTIFACT: ${{ inputs.codeartifact }}
+        run: |
+          status=0
+          [ -n "${SONAR_TOKEN}" ] || { echo "::error::The SONAR_TOKEN secret is empty or not available to this job."; status=1; }
+          [ -n "${SONAR_URL}" ] || { echo "::error::The SONAR_URL secret is empty or not available to this job."; status=1; }
+          if [ "${CODEARTIFACT}" = "true" ] && [ -z "${DEPLOYMENT_ROLE}" ]; then
+            echo "::error::codeartifact is true but the DEPLOYMENT_ROLE secret is empty or not available to this job."
+            status=1
+          fi
+          exit "${status}"
+
+      - name: Checkout calling repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          # Full history so SonarQube can attribute new code and blame.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        if: inputs.install
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.install && 'pnpm' || '' }}
+
+      - name: Configure CodeArtifact auth
+        if: inputs.codeartifact
+        uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@2efd2022d35cec2e48e4d99179b542e5144d831c
+        with:
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+
+      - name: Install dependencies
+        if: inputs.install
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        if: inputs.test-command != ''
+        env:
+          TEST_COMMAND: ${{ inputs.test-command }}
+        run: bash -euo pipefail -c "${TEST_COMMAND}"
+
+      - name: Cache SonarQube scanner
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Run SonarQube scan
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        with:
+          projectBaseDir: ${{ inputs.project-base-dir }}
+          args: >
+            -Dsonar.qualitygate.wait=${{ inputs.wait-for-quality-gate }}
+            -Dsonar.qualitygate.timeout=${{ inputs.quality-gate-timeout }}
+            ${{ inputs.args }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
