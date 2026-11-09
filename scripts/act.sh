@@ -65,7 +65,7 @@ fi
 # third-party action in tests/stubs/actions.map is replaced by its stub, for
 # every ref this repository uses.
 REPO_ARGS=(--local-repository "govuk-once/platform-shared-ci-cd@v1=${ROOT}")
-while read -r repo stub; do
+while read -r repo stub || [ -n "${repo}" ]; do
   case "${repo}" in ''|\#*) continue ;; esac
   while read -r ref; do
     REPO_ARGS+=(--local-repository "${repo}@${ref}=${STUBS}/actions/${stub}")
