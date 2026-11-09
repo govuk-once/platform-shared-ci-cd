@@ -1,0 +1,30 @@
+name: 'Sync AWS Parameters & Secrets'
+description: 'Upsert SSM parameters and Secrets Manager secrets before deployment'
+inputs:
+  environment:
+    description: 'Deployment environment (e.g. dev, staging, production). Replaces {{var.ENV}} tokens.'
+    required: true
+  service_name:
+    description: 'Service name (e.g. udp, idx). Replaces {{var.SERVICE}} tokens.'
+    required: true
+  ssm_params:
+    description: |
+      Newline-delimited SSM parameter mappings in the format:
+        /path/{{var.SERVICE}}/{{var.ENV}}/key=ENV_VAR_NAME
+      The value of ENV_VAR_NAME is read from the step's env: block.
+    required: false
+    default: ''
+  secrets_params:
+    description: |
+      Newline-delimited Secrets Manager mappings in the format:
+        {{var.ENV}}/{{var.SERVICE}}/secret-name=ENV_VAR_NAME
+      The value of ENV_VAR_NAME is read from the step's env: block.
+    required: false
+    default: ''
+  aws_region:
+    description: 'AWS region'
+    required: false
+    default: 'eu-west-2'
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

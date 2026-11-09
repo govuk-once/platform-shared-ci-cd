@@ -3,7 +3,7 @@
   "private": true,
   "description": "Shared GitHub Actions pipelines. Scripts here are for developing this repository only.",
   "scripts": {
-    "test": "node --test actions/",
+    "test": "node --test actions/ && npm --prefix actions/sync-aws-params test",
     "act": "scripts/act.sh",
     "act:pr-open": "scripts/act.sh pr-open",
     "act:pr-closed": "scripts/act.sh pr-closed",
