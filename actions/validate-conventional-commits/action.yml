@@ -1,0 +1,145 @@
+name: Validate Conventional Commits
+description: >-
+  Checks that the commits in a pull request follow the Conventional Commits
+  format `<type>(<scope>)?!?: <description>`. By default at least one commit
+  must match; set `mode: all` to require every commit to match.
+
+inputs:
+  types:
+    description: Space-separated list of allowed commit types.
+    required: false
+    default: "feat fix chore docs style refactor test perf ci build revert"
+  mode:
+    description: "`at-least-one` (default) or `all`."
+    required: false
+    default: "at-least-one"
+  base-sha:
+    description: Base commit (exclusive). Defaults to the pull request base SHA.
+    required: false
+    default: ${{ github.event.pull_request.base.sha }}
+  head-sha:
+    description: Head commit (inclusive). Defaults to the pull request head SHA.
+    required: false
+    default: ${{ github.event.pull_request.head.sha }}
+  skip-actors:
+    description: Space-separated pull request authors whose commits are not checked.
+    required: false
+    default: "dependabot[bot]"
+
+outputs:
+  valid:
+    description: "`true` when the commits are valid or the check was skipped; otherwise `false`."
+    value: ${{ steps.validate.outputs.valid }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate Conventional Commits
+      id: validate
+      shell: bash
+      env:
+        TYPES: ${{ inputs.types }}
+        MODE: ${{ inputs.mode }}
+        BASE_SHA: ${{ inputs.base-sha }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        SKIP_ACTORS: ${{ inputs.skip-actors }}
+        ACTOR: ${{ github.event.pull_request.user.login || github.actor }}
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        skip() {
+          echo "::notice::$1"
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        case "${MODE}" in
+          at-least-one|all) ;;
+          *) echo "::error::mode must be 'at-least-one' or 'all', got '${MODE}'."; exit 1 ;;
+        esac
+
+        if [ -z "${BASE_SHA}" ] || [ -z "${HEAD_SHA}" ]; then
+          case "${EVENT_NAME}" in
+            pull_request|pull_request_target)
+              echo "::error::Could not determine the base and head commits."; exit 1 ;;
+            *) skip "Not a pull request event (${EVENT_NAME}) and no base-sha/head-sha given; skipping commit check." ;;
+          esac
+        fi
+
+        for skip_actor in ${SKIP_ACTORS}; do
+          [ "${ACTOR}" = "${skip_actor}" ] && skip "Skipping commit check for ${ACTOR}."
+        done
+
+        # Shallow checkouts may not contain the range; fetch what is missing.
+        for sha in "${BASE_SHA}" "${HEAD_SHA}"; do
+          if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+            echo "Fetching ${sha}"
+            git fetch --no-tags --quiet origin "${sha}"
+          fi
+        done
+        if ! git merge-base "${BASE_SHA}" "${HEAD_SHA}" > /dev/null 2>&1; then
+          echo "Deepening history to find the merge base"
+          git fetch --no-tags --quiet --unshallow origin 2>/dev/null || git fetch --no-tags --quiet --deepen=1000 origin
+        fi
+
+        TYPE_ALTERNATION=$(printf '%s' "${TYPES}" | tr -s '[:space:]' '\n' | sed '/^$/d' | paste -sd'|' -)
+        PATTERN="^(${TYPE_ALTERNATION})(\([^)]+\))?!?: .+"
+
+        SUBJECTS="${RUNNER_TEMP}/conventional-commit-subjects.txt"
+        git log --no-merges --format=%s "${BASE_SHA}..${HEAD_SHA}" > "${SUBJECTS}"
+
+        if [ ! -s "${SUBJECTS}" ]; then
+          echo "::error::No non-merge commits found between ${BASE_SHA} and ${HEAD_SHA}."
+          echo "valid=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+
+        TOTAL=0
+        VALID=0
+        INVALID_LIST="${RUNNER_TEMP}/conventional-commit-invalid.txt"
+        : > "${INVALID_LIST}"
+        while IFS= read -r subject || [ -n "${subject}" ]; do
+          TOTAL=$((TOTAL + 1))
+          if printf '%s' "${subject}" | grep -Eq -- "${PATTERN}"; then
+            VALID=$((VALID + 1))
+            printf '✓ %s\n' "${subject}"
+          else
+            printf '✗ %s\n' "${subject}"
+            printf '%s\n' "${subject}" >> "${INVALID_LIST}"
+          fi
+        done < "${SUBJECTS}"
+
+        echo "${VALID} of ${TOTAL} commit(s) follow the Conventional Commits format."
+
+        RESULT=true
+        if [ "${MODE}" = "all" ] && [ "${VALID}" -ne "${TOTAL}" ]; then
+          RESULT=false
+        elif [ "${VALID}" -eq 0 ]; then
+          RESULT=false
+        fi
+        echo "valid=${RESULT}" >> "$GITHUB_OUTPUT"
+
+        FENCE='```'
+        {
+          echo "## Conventional Commits"
+          echo
+          echo "${VALID} of ${TOTAL} commit(s) match \`<type>(<scope>)?!?: <description>\` (mode: \`${MODE}\`)."
+          if [ -s "${INVALID_LIST}" ]; then
+            echo
+            echo "Commits that don't match:"
+            echo
+            echo "${FENCE}txt"
+            cat "${INVALID_LIST}"
+            echo "${FENCE}"
+          fi
+          echo
+          echo "Allowed types: \`${TYPES}\`"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "${RESULT}" != "true" ]; then
+          if [ "${MODE}" = "all" ]; then
+            echo "::error::Every commit must follow '<type>(<scope>)?!?: <description>'. Allowed types: ${TYPES}."
+          else
+            echo "::error::At least one commit must follow '<type>(<scope>)?!?: <description>'. Allowed types: ${TYPES}."
+          fi
+          exit 1
+        fi
