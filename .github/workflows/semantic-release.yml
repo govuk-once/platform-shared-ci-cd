@@ -10,7 +10,7 @@ on:
         default: "24"
 
     secrets:
-      deployment-role:
+      DEPLOYMENT_ROLE:
         required: true
         description: "ARN of the IAM role to assume for deployment"
 
@@ -63,7 +63,7 @@ jobs:
       - name: Configure CodeArtifact auth
         uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@2efd2022d35cec2e48e4d99179b542e5144d831c
         with:
-          role-to-assume: ${{ secrets.deployment-role }}
+          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
