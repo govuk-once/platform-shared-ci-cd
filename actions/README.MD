@@ -23,7 +23,7 @@ steps:
 
   - uses: govuk-once/platform-shared-ci-cd/actions/setup-node-pnpm@v1
     with:
-      codeartifact-role: ${{ secrets.DEPLOYMENT_ROLE }} # omit if you don't use CodeArtifact
+      codeartifact-role: ${{ secrets.deployment-role }} # omit if you don't use CodeArtifact
 ```
 
 The Node.js version comes from `node-version` if set, otherwise from `.nvmrc` (any value `actions/setup-node` accepts, such as `24` or `lts/krypton`), otherwise `24`.

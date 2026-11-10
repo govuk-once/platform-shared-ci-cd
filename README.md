@@ -39,10 +39,10 @@ jobs:
     with:
       node-version: "24"
     secrets:
-      DEPLOYMENT_ROLE: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
+      deployment-role: ${{ secrets.AWS_deployment-role }}
 ```
 
-The workflow always authenticates to AWS CodeArtifact before installing dependencies, so the `DEPLOYMENT_ROLE` secret is required.
+The workflow always authenticates to AWS CodeArtifact before installing dependencies, so the `deployment-role` secret is required.
 
 ### Inputs
 
@@ -54,7 +54,7 @@ The workflow always authenticates to AWS CodeArtifact before installing dependen
 
 | Secret            | Required | Description                                     |
 | ----------------- | -------- | ----------------------------------------------- |
-| `DEPLOYMENT_ROLE` | Yes      | IAM role ARN assumed via OIDC for CodeArtifact. |
+| `deployment-role` | Yes      | IAM role ARN assumed via OIDC for CodeArtifact. |
 
 ### Outputs
 
@@ -115,7 +115,7 @@ jobs:
       pull-requests: write
       id-token: write
     secrets:
-      DEPLOYMENT_ROLE: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
+      deployment-role: ${{ secrets.AWS_deployment-role }}
 
   deploy:
     name: Deploy to production
@@ -138,7 +138,7 @@ jobs:
       type: ${{ needs.release.outputs.type }}
       slack-channel: "#my-release-channel"
     secrets:
-      DEPLOYMENT_ROLE: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
+      deployment-role: ${{ secrets.AWS_deployment-role }}
 ```
 
 ### Inputs
@@ -155,7 +155,7 @@ jobs:
 
 | Secret            | Required | Description                                             |
 | ----------------- | -------- | ------------------------------------------------------- |
-| `DEPLOYMENT_ROLE` | Yes      | IAM role ARN assumed via OIDC to send the notification. |
+| `deployment-role` | Yes      | IAM role ARN assumed via OIDC to send the notification. |
 
 ## PR title validation
 
@@ -253,7 +253,7 @@ When dependencies come from AWS CodeArtifact and the role is held in a GitHub en
 | `test-command`          | No       | —       | Command run before the scan to generate coverage. Skipped when empty.                         |
 | `node-version`          | No       | `24`    | Node.js version used to install dependencies and run tests.                                  |
 | `install`               | No       | `true`  | Run `pnpm install --frozen-lockfile` before the tests and scan.                              |
-| `codeartifact`          | No       | `false` | Configure AWS CodeArtifact auth before installing. Requires the `DEPLOYMENT_ROLE` secret.    |
+| `codeartifact`          | No       | `false` | Configure AWS CodeArtifact auth before installing. Requires the `deployment-role` secret.    |
 | `environment`           | No       | —       | GitHub environment for the scan job, for callers whose secrets are environment-scoped.       |
 | `wait-for-quality-gate` | No       | `true`  | Fail the job when the Quality Gate fails.                                                    |
 | `quality-gate-timeout`  | No       | `300`   | Seconds to wait for the Quality Gate result.                                                 |
@@ -266,7 +266,7 @@ When dependencies come from AWS CodeArtifact and the role is held in a GitHub en
 | ----------------- | -------- | --------------------------------------------------------------------------- |
 | `SONAR_TOKEN`     | Yes      | SonarQube token with permission to analyse the project.                     |
 | `SONAR_URL`       | Yes      | SonarQube server URL.                                                       |
-| `DEPLOYMENT_ROLE` | No       | IAM role ARN assumed via OIDC for CodeArtifact. Required when `codeartifact` is `true`. |
+| `deployment-role` | No       | IAM role ARN assumed via OIDC for CodeArtifact. Required when `codeartifact` is `true`. |
 
 The job fails early with a clear error if a required secret is empty or not available to it, for example because it lives in an environment that was not passed as `environment`.
 

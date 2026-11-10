@@ -26,14 +26,14 @@ on:
       codeartifact:
         description: >-
           Configure AWS CodeArtifact auth before installing dependencies. Requires
-          the `DEPLOYMENT_ROLE` secret.
+          the `deployment-role` secret.
         required: false
         type: boolean
         default: false
       environment:
         description: >-
           GitHub environment for the scan job, for callers whose secrets (such as
-          `DEPLOYMENT_ROLE`) are environment-scoped.
+          `deployment-role`) are environment-scoped.
         required: false
         type: string
         default: ""
@@ -65,7 +65,7 @@ on:
       SONAR_URL:
         required: true
         description: SonarQube server URL.
-      DEPLOYMENT_ROLE:
+      deployment-role:
         required: false
         description: IAM role ARN assumed via OIDC for CodeArtifact. Required when `codeartifact` is true.
 
@@ -85,14 +85,14 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_URL: ${{ secrets.SONAR_URL }}
-          DEPLOYMENT_ROLE: ${{ secrets.DEPLOYMENT_ROLE }}
+          deployment-role: ${{ secrets.deployment-role }}
           CODEARTIFACT: ${{ inputs.codeartifact }}
         run: |
           status=0
           [ -n "${SONAR_TOKEN}" ] || { echo "::error::The SONAR_TOKEN secret is empty or not available to this job."; status=1; }
           [ -n "${SONAR_URL}" ] || { echo "::error::The SONAR_URL secret is empty or not available to this job."; status=1; }
-          if [ "${CODEARTIFACT}" = "true" ] && [ -z "${DEPLOYMENT_ROLE}" ]; then
-            echo "::error::codeartifact is true but the DEPLOYMENT_ROLE secret is empty or not available to this job."
+          if [ "${CODEARTIFACT}" = "true" ] && [ -z "${deployment-role}" ]; then
+            echo "::error::codeartifact is true but the deployment-role secret is empty or not available to this job."
             status=1
           fi
           exit "${status}"
@@ -118,7 +118,7 @@ jobs:
         if: inputs.codeartifact
         uses: govuk-once/platform-actions-codeartifact-login/.github/actions/codeartifact-auth@2efd2022d35cec2e48e4d99179b542e5144d831c
         with:
-          role-to-assume: ${{ secrets.DEPLOYMENT_ROLE }}
+          role-to-assume: ${{ secrets.deployment-role }}
 
       - name: Install dependencies
         if: inputs.install
