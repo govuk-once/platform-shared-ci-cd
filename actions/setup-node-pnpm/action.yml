@@ -1,0 +1,150 @@
+name: Setup Node.js and pnpm
+description: >-
+  Installs pnpm (version from package.json `packageManager`), sets up Node.js,
+  optionally authenticates to AWS CodeArtifact, and installs dependencies.
+
+inputs:
+  node-version:
+    description: >-
+      Node.js version. When empty, the version is read from `node-version-file`
+      if it exists, otherwise `24` is used.
+    required: false
+    default: ""
+  node-version-file:
+    description: >-
+      File, relative to `working-directory`, to read the Node.js version from when
+      `node-version` is empty.
+    required: false
+    default: ".nvmrc"
+  cache:
+    description: Cache the pnpm store between runs ("true"/"false").
+    required: false
+    default: "true"
+  install:
+    description: Run `pnpm install` ("true"/"false").
+    required: false
+    default: "true"
+  install-args:
+    description: Arguments passed to `pnpm install`.
+    required: false
+    default: "--frozen-lockfile"
+  working-directory:
+    description: Directory containing package.json and the lockfile.
+    required: false
+    default: "."
+  codeartifact-role:
+    description: >-
+      IAM role ARN assumed via GitHub OIDC to fetch a CodeArtifact auth token.
+      Empty skips CodeArtifact. The job needs `id-token: write`. Only the auth
+      token is written (to the user-level ~/.npmrc); registry routing and other
+      settings stay in the repository's own .npmrc.
+    required: false
+    default: ""
+  codeartifact-domain:
+    description: CodeArtifact domain.
+    required: false
+    default: "registry-prod"
+  codeartifact-repository:
+    description: CodeArtifact repository.
+    required: false
+    default: "registry-prod-repo"
+  codeartifact-domain-owner:
+    description: AWS account ID that owns the CodeArtifact domain.
+    required: false
+    default: "904690835784"
+  codeartifact-region:
+    description: Region of the CodeArtifact domain.
+    required: false
+    default: "eu-west-2"
+
+outputs:
+  node-version:
+    description: The Node.js version that was requested.
+    value: ${{ steps.resolve.outputs.node-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Node.js version
+      id: resolve
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NODE_VERSION: ${{ inputs.node-version }}
+        NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+      run: |
+        if [ -z "${NODE_VERSION}" ] && [ -n "${NODE_VERSION_FILE}" ] && [ -f "${NODE_VERSION_FILE}" ]; then
+          NODE_VERSION=$(tr -d '[:space:]' < "${NODE_VERSION_FILE}")
+          echo "Using Node.js ${NODE_VERSION} from ${NODE_VERSION_FILE}"
+        fi
+        NODE_VERSION="${NODE_VERSION:-24}"
+        echo "node-version=${NODE_VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      with:
+        package_json_file: ${{ inputs.working-directory }}/package.json
+
+    - name: Setup Node.js
+      uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      with:
+        node-version: ${{ steps.resolve.outputs.node-version }}
+        cache: ${{ inputs.cache == 'true' && 'pnpm' || '' }}
+        cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+    # Credentials go to step outputs only, so the CodeArtifact role is not
+    # exported to the rest of the caller's job.
+    - name: Assume CodeArtifact role
+      id: codeartifact-credentials
+      if: inputs.codeartifact-role != ''
+      uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+      with:
+        role-to-assume: ${{ inputs.codeartifact-role }}
+        aws-region: ${{ inputs.codeartifact-region }}
+        role-session-name: codeartifact-${{ github.run_id }}
+        output-credentials: true
+        output-env-credentials: false
+
+    - name: Configure CodeArtifact auth token
+      if: inputs.codeartifact-role != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        AWS_ACCESS_KEY_ID: ${{ steps.codeartifact-credentials.outputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.codeartifact-credentials.outputs.aws-secret-access-key }}
+        AWS_SESSION_TOKEN: ${{ steps.codeartifact-credentials.outputs.aws-session-token }}
+        AWS_REGION: ${{ inputs.codeartifact-region }}
+        DOMAIN: ${{ inputs.codeartifact-domain }}
+        DOMAIN_OWNER: ${{ inputs.codeartifact-domain-owner }}
+        REPOSITORY: ${{ inputs.codeartifact-repository }}
+      run: |
+        TOKEN=$(aws codeartifact get-authorization-token \
+          --domain "${DOMAIN}" --domain-owner "${DOMAIN_OWNER}" \
+          --query authorizationToken --output text)
+        echo "::add-mask::${TOKEN}"
+
+        ENDPOINT=$(aws codeartifact get-repository-endpoint \
+          --domain "${DOMAIN}" --domain-owner "${DOMAIN_OWNER}" \
+          --repository "${REPOSITORY}" --format npm \
+          --query repositoryEndpoint --output text)
+        # https://host/npm/repo/ -> //host/npm/repo/
+        REGISTRY="//${ENDPOINT#*://}"
+        REGISTRY="${REGISTRY%/}/"
+
+        # Run outside the project so npm does not validate its .npmrc.
+        (cd "${HOME}" && npm config set "${REGISTRY}:_authToken" "${TOKEN}" --location=user)
+        echo "Configured a CodeArtifact auth token for ${REGISTRY} in ~/.npmrc"
+
+        if ! grep -qsF "${REGISTRY#//}" .npmrc; then
+          echo "::warning::.npmrc does not reference ${ENDPOINT}. Add a registry or scoped registry entry for it, otherwise the CodeArtifact token is unused."
+        fi
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_ARGS: ${{ inputs.install-args }}
+      run: |
+        read -ra args <<< "${INSTALL_ARGS}"
+        pnpm install "${args[@]}"
