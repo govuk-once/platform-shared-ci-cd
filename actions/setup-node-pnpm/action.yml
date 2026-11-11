@@ -99,14 +99,37 @@ runs:
         CODEARTIFACT_REPOSITORY: ${{ inputs.codeartifact-repository }}
         CODEARTIFACT_NAMESPACE: ${{ inputs.codeartifact-namespace }}
         CODEARTIFACT_REGION: ${{ inputs.codeartifact-region }}
+      # Rather than `aws codeartifact login` (which only writes ~/.npmrc), put the
+      # token in CODEARTIFACT_AUTH_TOKEN and reference it from the project
+      # .npmrc: project config wins over user config, and pnpm reads it for
+      # both metadata (supply-chain checks) and tarball fetches.
       run: |
-        aws codeartifact login \
-          --tool npm \
-          --namespace "${CODEARTIFACT_NAMESPACE}" \
-          --repository "${CODEARTIFACT_REPOSITORY}" \
-          --domain "${CODEARTIFACT_DOMAIN}" \
-          --domain-owner "${CODEARTIFACT_ACCOUNT}" \
-          --region "${CODEARTIFACT_REGION}"
+        set -euo pipefail
+        common=(--domain "${CODEARTIFACT_DOMAIN}" --domain-owner "${CODEARTIFACT_ACCOUNT}" --region "${CODEARTIFACT_REGION}")
+
+        token=$(aws codeartifact get-authorization-token "${common[@]}" \
+          --query authorizationToken --output text)
+        echo "::add-mask::${token}"
+        endpoint=$(aws codeartifact get-repository-endpoint "${common[@]}" \
+          --repository "${CODEARTIFACT_REPOSITORY}" --format npm \
+          --query repositoryEndpoint --output text)
+        endpoint="${endpoint%/}/"
+        echo "CODEARTIFACT_AUTH_TOKEN=${token}" >> "$GITHUB_ENV"
+
+        scope_key="@${CODEARTIFACT_NAMESPACE}:registry"
+        auth_line="${endpoint#https:}:_authToken=\${CODEARTIFACT_AUTH_TOKEN}"
+        touch .npmrc
+        existing=$(sed -n "s|^${scope_key}=||p" .npmrc | tail -n1)
+        if [ -z "${existing}" ]; then
+          echo "${scope_key}=${endpoint}" >> .npmrc
+        elif [ "${existing%/}/" != "${endpoint}" ]; then
+          echo "::warning title=CodeArtifact registry mismatch::.npmrc routes @${CODEARTIFACT_NAMESPACE} to ${existing} but credentials are for ${endpoint}. Installs will get 401s; align codeartifact-account/domain/repository with .npmrc and pnpm-lock.yaml."
+        fi
+        echo "${auth_line}" >> .npmrc
+        # Also configure npm/pnpm user config for tools run outside this directory.
+        echo "${scope_key}=${endpoint}" >> "${HOME}/.npmrc"
+        echo "${auth_line}" >> "${HOME}/.npmrc"
+        echo "Configured @${CODEARTIFACT_NAMESPACE} -> ${endpoint}"
 
     - name: Install dependencies
       if: inputs.install == 'true'

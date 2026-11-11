@@ -18,5 +18,8 @@ case "$1 $2" in
     if [[ "${args}" == *"topic"* ]]; then echo "arn:aws:sns:eu-west-2:000000000000:act-stub-topic"
     else echo "stub-parameter-value"; fi ;;
   "codeartifact login") echo "Successfully configured npm to use AWS CodeArtifact (stub)" ;;
+  "codeartifact get-authorization-token") echo "stub-codeartifact-token" ;;
+  "codeartifact get-repository-endpoint")
+    echo "https://registry-prod-000000000000.d.codeartifact.eu-west-2.amazonaws.com/npm/registry-prod-repo/" ;;
   *) ;;  # s3 cp, sns publish, ssm put-parameter, ...: succeed silently
 esac
