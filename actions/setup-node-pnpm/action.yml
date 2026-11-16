@@ -125,10 +125,10 @@ runs:
         elif [ "${existing%/}/" != "${endpoint}" ]; then
           echo "::warning title=CodeArtifact registry mismatch::.npmrc routes @${CODEARTIFACT_NAMESPACE} to ${existing} but credentials are for ${endpoint}. Installs will get 401s; align codeartifact-account/domain/repository with .npmrc and pnpm-lock.yaml."
         fi
-        echo "${auth_line}" >> .npmrc
+        grep -qxF "${auth_line}" .npmrc || echo "${auth_line}" >> .npmrc
         # Also configure npm/pnpm user config for tools run outside this directory.
-        echo "${scope_key}=${endpoint}" >> "${HOME}/.npmrc"
-        echo "${auth_line}" >> "${HOME}/.npmrc"
+        grep -qxF "${scope_key}=${endpoint}" "${HOME}/.npmrc" 2>/dev/null || echo "${scope_key}=${endpoint}" >> "${HOME}/.npmrc"
+        grep -qxF "${auth_line}" "${HOME}/.npmrc" 2>/dev/null || echo "${auth_line}" >> "${HOME}/.npmrc"
         echo "Configured @${CODEARTIFACT_NAMESPACE} -> ${endpoint}"
 
     - name: Install dependencies
