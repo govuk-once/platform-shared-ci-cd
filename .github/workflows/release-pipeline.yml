@@ -1,7 +1,7 @@
 name: Release Pipeline
 
 # Release pipeline driven by the caller's .github/pipeline.yml:
-#   config -> quality -> semantic release -> environments[0] -> ... -> environments[3]
+#   config -> quality (SonarQube only) -> semantic release -> environments[0] -> ... -> environments[3]
 #   -> failure notification
 #
 # Each environment runs as a deploy-stage.yml job in its GitHub environment, so
@@ -61,6 +61,9 @@ jobs:
     uses: govuk-once/platform-shared-ci-cd/.github/workflows/quality-checks.yml@test/consolidate-pipeline
     with:
       config: ${{ needs.config.outputs.config }}
+      # quality.checks already ran on the PR; only SonarQube runs on main, to
+      # keep the branch analysis that PR scans compare against up to date.
+      run-checks: false
     secrets: inherit
 
   release:

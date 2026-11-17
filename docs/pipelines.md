@@ -11,7 +11,7 @@ The pipeline logic (ordering, credentials, setup, notifications) lives in this r
 | ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pr-pipeline.yml`      | `pull_request` (opened, edited, synchronize, reopened) | Title check, quality checks, deploy the ephemeral environment and run its hooks. Editing only the PR title re-runs the title check without redeploying. |
 | `pr-cleanup.yml`       | `pull_request` (closed)                                | Destroys the ephemeral environment. Shares a concurrency group with the PR deploy so they never overlap.                                                |
-| `release-pipeline.yml` | `push` to `main`                                       | Quality checks, semantic release, then each environment in order, then a failure notification.                                                          |
+| `release-pipeline.yml` | `push` to `main`                                       | SonarQube (checks already ran on the PR), semantic release, then each environment in order, then a failure notification.                                |
 
 Complete worked examples: [UDP](../examples/udp) and [flex](../examples/flex).
 
@@ -21,7 +21,7 @@ Complete worked examples: [UDP](../examples/udp) and [flex](../examples/flex).
 pr-pipeline:       config ─┬─ title ──────── ephemeral (deploy-stage)
                            └─ quality (checks │ security │ sonar)
 
-release-pipeline:  config ── quality ── release ── env[0] ── env[1] ── env[2] ── env[3]
+release-pipeline:  config ── quality (sonar) ── release ── env[0] ── env[1] ── env[2] ── env[3]
                                                                          └── notify-failure
 
 deploy-stage (one job, in the stage's GitHub environment):
@@ -83,7 +83,7 @@ Set `title: false` to disable. Otherwise see the [validate-pr-title inputs](../R
 | Key                    | Default                                                | Description                                                                                |
 | ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `setup`                | —                                                      | Command run before checks, e.g. `python3 -m pip install checkov`.                          |
-| `checks`               | —                                                      | Commands run in order in the **Checks** job.                                               |
+| `checks`               | —                                                      | Commands run in order in the **Checks** job. PR pipeline only.                             |
 | `aws`                  | `false`                                                | Give the Checks job AWS credentials (e.g. for `cdk synth`).                                |
 | `environment`          | `pr.ephemeral.environment`, else the first environment | GitHub environment whose `DEPLOYMENT_ROLE` quality jobs assume when they need AWS.         |
 | `nx`                   | `false`                                                | Set `NX_BASE`/`NX_HEAD` for `nx affected`.                                                 |

@@ -49,7 +49,7 @@ environments:
 | ----------------------- | --------------------------------------------------------------------------------------------------------- |
 | `pr-pipeline.yml`       | PR title check, quality checks, ephemeral environment deploy with hooks.                                  |
 | `pr-cleanup.yml`        | Destroys the ephemeral environment when the PR closes.                                                    |
-| `release-pipeline.yml`  | Quality checks, semantic release, then up to four environments in order, with notifications.              |
+| `release-pipeline.yml`  | SonarQube, semantic release, then up to four environments in order, with notifications.                   |
 | `deploy-stage.yml`      | One stage (used by the pipelines): credentials, setup, hooks, deploy/destroy, notifications.              |
 | `quality-checks.yml`    | Config-driven checks, security and SonarQube jobs (used by the pipelines).                                |
 
@@ -486,4 +486,3 @@ The following changes are considered breaking and require a new major version:
 - changing behaviour in a way that requires caller modifications.
 
 Callers should not reference `@main` in production workflows.
-

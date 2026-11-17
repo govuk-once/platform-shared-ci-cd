@@ -65,6 +65,11 @@ fi
 # third-party action in tests/stubs/actions.map is replaced by its stub, for
 # every ref this repository uses.
 REPO_ARGS=(--local-repository "govuk-once/platform-shared-ci-cd@v1=${ROOT}")
+# Also every ref the internal uses are pinned to (e.g. a test branch), so act
+# never silently fetches the published copy instead of the working tree.
+while read -r ref; do
+  REPO_ARGS+=(--local-repository "govuk-once/platform-shared-ci-cd@${ref}=${ROOT}")
+done < <(grep -rhoE "uses: govuk-once/platform-shared-ci-cd/[^@ ]+@[^ ]+" "${ROOT}/.github" "${ROOT}/actions" | sed 's/.*@//' | grep -vx v1 | sort -u)
 while read -r repo stub; do
   case "${repo}" in ''|\#*) continue ;; esac
   while read -r ref; do

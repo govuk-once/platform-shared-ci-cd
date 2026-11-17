@@ -2,6 +2,7 @@ name: Quality Checks
 
 # Config-driven quality checks, each job running only when configured:
 #   checks   - optional setup command, then the ordered quality.checks commands
+#              (skipped when run-checks is false, e.g. on release after the PR ran them)
 #   security - dependency review and Conventional Commit check (pull requests only)
 #   sonar    - tests for coverage, then SonarQube scan and quality gate
 #
@@ -15,6 +16,11 @@ on:
         description: Normalised pipeline config JSON (load-pipeline-config output).
         required: true
         type: string
+      run-checks:
+        description: Run the quality.checks job. The release pipeline sets false, as the PR already ran them.
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -24,7 +30,7 @@ permissions:
 jobs:
   checks:
     name: Checks
-    if: fromJSON(inputs.config).quality.has-checks
+    if: inputs.run-checks && fromJSON(inputs.config).quality.has-checks
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: ${{ fromJSON(inputs.config).quality.environment }}
