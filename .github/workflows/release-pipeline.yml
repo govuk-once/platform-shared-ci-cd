@@ -69,6 +69,12 @@ jobs:
   release:
     name: Release
     needs: [config, quality]
+    # quality is skipped when no SonarQube is configured (checks only run on
+    # the PR); only a quality failure should stop the release.
+    if: >-
+      !cancelled() &&
+      needs.config.result == 'success' &&
+      needs.quality.result != 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # CodeArtifact installs need AWS credentials from an environment.
